@@ -566,3 +566,33 @@ Actualmente la arquitectura permite:
 - registrar eventos para su posterior análisis.
 
 La arquitectura representa una integración práctica entre inteligencia artificial local, recuperación aumentada de información, administración de sistemas y automatización.
+
+## Actualización arquitectura v1.1 - Separación de responsabilidades
+
+Fecha: Julio 2026
+
+A partir de la versión 1.1 del módulo query.py se establece una separación
+entre la ejecución del pipeline RAG y la supervisión térmica del sistema.
+
+Cambios principales:
+
+- query.py queda encargado exclusivamente del flujo RAG:
+  - carga de embeddings;
+  - generación de embeddings de consulta;
+  - búsqueda semántica;
+  - construcción de contexto;
+  - interacción con modelos LLM.
+
+- logger.py queda encargado de registrar:
+  - inicio de sesión;
+  - modo seleccionado;
+  - tiempos de ejecución;
+  - etapas del pipeline.
+
+- thermal_watchdog.py mantiene la responsabilidad exclusiva de:
+  - monitoreo de temperatura;
+  - detección de condiciones críticas;
+  - acciones preventivas sobre procesos.
+
+Esta separación permite evolucionar el sistema hacia arquitecturas híbridas
+(local/nube) sin modificar el núcleo del pipeline RAG.
