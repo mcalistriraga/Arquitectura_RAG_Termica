@@ -7,7 +7,7 @@ __pycache__/
 *.tmp
 
 # RAG generated artifacts
-embeddings.jsonl
+# embeddings.jsonl
 
 # VSCode
 .vscode/
