@@ -6,6 +6,9 @@ __pycache__/
 *.log
 *.tmp
 
+# RAG generated artifacts
+embeddings.jsonl
+
 # VSCode
 .vscode/
 
