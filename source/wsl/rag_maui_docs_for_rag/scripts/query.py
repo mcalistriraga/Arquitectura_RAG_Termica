@@ -1,60 +1,147 @@
 # =============================================================
-# Proyecto: Arquitectura RAG local con supervisión térmica
-# Archivo: query.py
+# Proyecto:
+# Arquitectura RAG local con supervisión térmica
 #
-# Versión: 1.1
-# Fecha: Julio 2026
-# Hora: 14:00
+# Archivo:
+# query.py
+#
+# Versión:
+# 1.4
+#
+# Fecha:
+# 24 de Julio de 2026
 #
 # Descripción:
 # ------------
-# Módulo principal de consulta del sistema RAG local.
+# Módulo principal del pipeline RAG.
 #
-# Implementa:
-# - Carga de embeddings generados previamente.
-# - Generación del embedding de la consulta mediante Ollama.
-# - Búsqueda semántica mediante similitud coseno.
-# - Recuperación de contexto arquitectónico mediante symbols.jsonl.
-# - Consulta a modelos LLM locales utilizando Ollama.
+# Coordina el flujo completo de una consulta desde que el
+# usuario introduce una pregunta hasta que la respuesta es
+# generada por el backend de inferencia seleccionado.
 #
-# Modos de operación:
-# 1. Debugging C# / MAUI
-# 2. Arquitectura del sistema
-# 3. Documentación técnica
+# Este módulo constituye el núcleo del sistema y mantiene
+# desacopladas las etapas de recuperación de conocimiento,
+# generación de respuestas y registro de métricas.
 #
-# Correcciones versión 1.1:
-# -------------------------
-# - Se elimina el manejo directo de supervisión térmica dentro de query.py.
-# - La protección térmica queda delegada exclusivamente a thermal_watchdog.py.
-# - Se eliminan dependencias obsoletas con logger.py relacionadas con temperatura.
-# - Se mantiene la responsabilidad de query.py enfocada en el pipeline RAG.
+# Responsabilidades:
+# ------------------
+# - Recibir las consultas del usuario.
+# - Gestionar la sesión de trabajo.
+# - Detectar errores de compilación C# cuando existan.
+# - Generar embeddings mediante Ollama.
+# - Recuperar contexto desde la base vectorial.
+# - Recuperar información arquitectónica mediante symbols.jsonl.
+# - Construir el contexto enviado al LLM.
+# - Delegar la inferencia a llm_backend.py.
+# - Registrar la ejecución mediante logger.py.
 #
-# Arquitectura actual:
-# --------------------
-# query.py
-#     |
-#     +-- Gestión de consultas RAG
-#     +-- Embeddings
-#     +-- Búsqueda semántica
-#     +-- Inferencia LLM
-#     +-- Registro de eventos
+# Componentes utilizados:
+# -----------------------
+# Embeddings:
+#     nomic-embed-text
 #
-# thermal_watchdog.py
-#     |
-#     +-- Supervisión térmica del hardware
-#     +-- Protección ante temperaturas críticas
+# Backends disponibles:
+#     LOCAL  -> Ollama
+#     CLOUD  -> OpenRouter
 #
 # Modelos configurados:
-# - Embeddings : nomic-embed-text
-# - Debug      : qwen2.5-coder:1.5b
-# - Arquitectura/Docs : llama3.2:3b
+#     DEBUG -> qwen2.5-coder:1.5b
+#     ARCH  -> llama3.2:3b
+#     DOCS  -> llama3.2:3b
 #
-# Objetivo versión 1.1:
+# Modos de operación:
+# -------------------
+# 1. Depuración de código C# / .NET MAUI.
+# 2. Consultas de arquitectura del sistema.
+# 3. Generación de documentación técnica.
+#
+# Arquitectura general:
 # ---------------------
-# Recuperar una versión funcional y coherente del módulo de consulta,
-# compatible con la arquitectura desacoplada de supervisión térmica.
+#
+#                  Usuario
+#                     │
+#                     ▼
+#              Recepción pregunta
+#                     │
+#                     ▼
+#          Detección de errores C#
+#                     │
+#                     ▼
+#           Embedding de consulta
+#                     │
+#                     ▼
+#        Recuperación semántica (RAG)
+#                     │
+#                     ▼
+#      Recuperación de contexto simbólico
+#                     │
+#                     ▼
+#             Construcción del prompt
+#                     │
+#                     ▼
+#             llm_backend.py
+#          ┌──────────┴──────────┐
+#          │                     │
+#          ▼                     ▼
+#      Ollama               OpenRouter
+#          │                     │
+#          └──────────┬──────────┘
+#                     ▼
+#              Respuesta LLM
+#                     │
+#                     ▼
+#             Registro en logger.py
+#
+# Gestión de sesión:
+# ------------------
+# Cada consulta del usuario crea una nueva sesión lógica de
+# ejecución. La sesión conserva:
+#
+# - modo operativo;
+# - backend de inferencia;
+# - modelo seleccionado;
+# - métricas de ejecución.
+#
+# El registro asociado a la sesión se inicializa para cada
+# consulta mediante logger.py.
+#
+# Supervisión térmica:
+# --------------------
+# La protección térmica permanece completamente desacoplada
+# del pipeline RAG.
+#
+# Es responsabilidad exclusiva de:
+#
+#     thermal_watchdog.py
+#
+# Dicho módulo supervisa continuamente el hardware y puede
+# interrumpir la ejecución de query.py cuando se alcanzan
+# condiciones térmicas críticas.
+#
+# Cambios versión 1.4:
+# --------------------
+# - Se consolida el funcionamiento del backend híbrido
+#   LOCAL / CLOUD.
+# - La sesión de trabajo pasa a inicializarse para cada
+#   consulta realizada por el usuario.
+# - logger.py registra una sesión independiente por consulta,
+#   incorporando métricas de rendimiento del pipeline.
+# - Se mantiene completamente local la recuperación RAG,
+#   delegando únicamente la inferencia al backend seleccionado.
+# - Se mejora la separación de responsabilidades entre
+#   query.py, llm_backend.py, logger.py y
+#   thermal_watchdog.py.
+#
+# Objetivo de la versión:
+# -----------------------
+# Consolidar una arquitectura híbrida desacoplada en la que
+# la recuperación del conocimiento permanezca local mientras
+# la generación de respuestas pueda ejecutarse mediante
+# distintos proveedores de inferencia sin modificar el
+# núcleo del pipeline RAG.
 #
 # =============================================================
+
 import os
 import json
 import numpy as np
@@ -66,8 +153,9 @@ from datetime import datetime
 from logger import (
     init_logger,
     log_step,
-    is_aborted,
 )
+
+from llm_backend import ask_llm_backend
 
 # =========================
 # CONFIGURACIÓN
@@ -249,95 +337,6 @@ def search(query_embedding, data, k=TOP_K, file_filter=None):
 
 
 # =========================
-# LLM
-# =========================
-
-def ask_llm(context, question, model, error_info=None, symbol_context=""):
-
-    # =========================
-    # MODEL SAFETY
-    # =========================
-
-    allowed_models = {
-        "qwen2.5-coder:1.5b",
-        "llama3.2:3b",
-        "llama3:latest",
-        "nomic-embed-text:latest"
-    }
-
-    if model not in allowed_models:
-        print(f"❌ MODELO INVALIDO: {model}")
-        model = "qwen2.5-coder:1.5b"
-
-    full_context = f"""
-{symbol_context}
-
-{context}
-"""[:1500]
-
-    if error_info:
-        prompt = f"""
-Eres un experto en debugging C# y MAUI.
-
-ERROR:
-{error_info['raw']}
-
-ARCHIVO:
-{error_info['file']}
-
-CONTEXTO:
-{full_context}
-
-INSTRUCCIONES:
-- Explica la causa exacta
-- Identifica clase o propiedad
-- Propón fix exacto
-- Impacto en UI/ViewModel
-
-RESPUESTA:
-"""
-    else:
-        prompt = f"""
-Eres un asistente técnico MAUI.
-
-CONTEXTO:
-{full_context}
-
-PREGUNTA:
-{question}
-
-RESPUESTA:
-"""
-
-    try:
-        response = requests.post(
-            OLLAMA_CHAT_URL,
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False
-            },
-            timeout=120
-        )
-
-        print("🔍 LLM STATUS:", response.status_code)
-
-        try:
-            print("🔍 LLM RAW:", response.text[:300])
-        except:
-            pass
-
-        if response.status_code == 200:
-            return response.json().get("response", "")
-
-        return "❌ Error LLM"
-
-    except Exception as e:
-        print("❌ LLM EXCEPTION:", str(e))
-        return "❌ Error LLM"
-
-
-# =========================
 # MAIN
 # =========================
 
@@ -357,11 +356,8 @@ def main():
         return
 
     # =========================
-    # LOGGER INIT
+    # SELECCIÓN MODELO IA
     # =========================
-
-    init_logger()
-    log_step("SESSION_START")
 
     print("=== MODO IA LOCAL ===")
     print("1. DEPURACIÓN")
@@ -380,7 +376,29 @@ def main():
         selected_model = MODEL_DOCS
         selected_mode = "DOCS"
 
-    log_step("MODE_SELECTED", selected_mode)
+    # =========================
+    # SESIÓN ACTUAL
+    # =========================
+#
+# Durante las pruebas del backend CLOUD se selecciona
+# explícitamente un modelo válido de OpenRouter.
+# En ejecución LOCAL se utilizará selected_model.
+
+    session = {
+        "mode": selected_mode,
+#          "backend": "LOCAL",
+        "backend": "cloud",  # o "CLOUD"
+#          "model": selected_model
+        "model": "openai/gpt-4.1-mini"  # Identificador válido en OpenRouter
+    }
+
+    print("\n==============================")
+    print("Sesión actual")
+    print("==============================")
+    print(f"Modo IA : {session['mode']}")
+    print(f"Backend : {session['backend']}")
+    print(f"Modelo  : {session['model']}")
+    print("==============================\n")
 
     # =========================
     # LOOP
@@ -388,19 +406,26 @@ def main():
 
     while True:
 
-        # 🔥 CONTROL TÉRMICO GLOBAL (único punto de control)
-        if is_aborted():
-            print("🛑 SISTEMA ABORTADO POR TEMPERATURA")
-            log_step("ABORT_GLOBAL", selected_mode)
-            break
-
         user_input = input("💬 Input: ")
 
         if user_input.lower() in ["exit", "quit"]:
-            log_step("EXIT")
             break
 
-        log_step("INPUT_RECEIVED", selected_mode)
+        # =========================
+        # LOGGER INIT (POR PREGUNTA)
+        # =========================
+
+        init_logger(
+            mode=session["mode"],
+            model_chat=session["model"],
+            model_embedding=MODEL_EMBED,
+            backend=session["backend"],
+            question=user_input
+        )
+
+        log_step("SESSION_START")
+        log_step("MODE_SELECTED", session["mode"])
+        log_step("INPUT_RECEIVED", session["mode"])
 
         error_info = None
         file_filter = None
@@ -409,7 +434,7 @@ def main():
             error_info = extract_error_info(user_input)
             file_filter = error_info.get("file")
             query_text = user_input + " " + (file_filter or "")
-            log_step("COMPILER_ERROR", selected_mode)
+            log_step("COMPILER_ERROR", session["mode"])
         else:
             query_text = user_input
 
@@ -417,25 +442,25 @@ def main():
         # EMBEDDING
         # =========================
 
-        log_step("EMBEDDING_START", selected_mode)
+        log_step("EMBEDDING_START", session["mode"])
 
         q_emb = get_embedding(query_text)
 
         if q_emb is None:
-            log_step("EMBEDDING_FAIL", selected_mode)
+            log_step("EMBEDDING_FAIL", session["mode"])
             continue
 
-        log_step("EMBEDDING_OK", selected_mode)
+        log_step("EMBEDDING_OK", session["mode"])
 
         # =========================
         # SEARCH
         # =========================
 
-        log_step("SEARCH_START", selected_mode)
+        log_step("SEARCH_START", session["mode"])
 
         results = search(q_emb, data, TOP_K, file_filter)
 
-        log_step("SEARCH_DONE", selected_mode)
+        log_step("SEARCH_DONE", session["mode"])
 
         # =========================
         # CONTEXT
@@ -452,23 +477,24 @@ def main():
         # LLM
         # =========================
 
-        log_step("LLM_START", selected_mode)
+        log_step("LLM_START", session["mode"])
 
-        answer = ask_llm(
+        answer = ask_llm_backend(
             context,
             user_input,
-            selected_model,
+            session["model"],
             error_info,
-            symbol_context
+            symbol_context,
+            backend=session["backend"].lower()
         )
 
-        log_step("LLM_DONE", selected_mode)
+        log_step("LLM_DONE", session["mode"])
 
         print("\n🤖 Respuesta:\n")
         print(answer)
         print("\n" + "=" * 60 + "\n")
 
-        log_step("ANSWER_PRINTED", selected_mode)
+        log_step("ANSWER_PRINTED", session["mode"])
 
 
 if __name__ == "__main__":

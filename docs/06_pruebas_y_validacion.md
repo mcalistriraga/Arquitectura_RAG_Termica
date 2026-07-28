@@ -2,30 +2,49 @@
 
 ## 1. Introducción
 
-Durante el desarrollo del proyecto se realizaron pruebas progresivas para validar cada capa de la arquitectura.
+Durante el desarrollo del proyecto se realizaron pruebas progresivas para validar cada uno de los componentes que forman la arquitectura del sistema.
 
-La estrategia utilizada fue validar los componentes de forma independiente antes de integrarlos:
+La estrategia seguida consistió en verificar cada componente de manera independiente antes de integrarlo con el resto del pipeline.
 
 ```text
 Hardware
-   |
-   v
+
+    │
+    ▼
+
 LibreHardwareMonitor
-   |
-   v
+
+    │
+    ▼
+
 export_temp_server.py
-   |
-   v
+
+    │
+    ▼
+
 thermal_watchdog.py
-   |
-   v
+
+    │
+    ▼
+
 query.py
-   |
-   v
-RAG + Ollama
+
+    │
+    ▼
+
+llm_backend.py
+
+    │
+    ▼
+
+Backend de inferencia
+
+(LOCAL o CLOUD)
 ```
 
-El objetivo fue garantizar que el sistema completo funcionara de forma estable en un equipo con recursos limitados.
+Este enfoque permitió aislar posibles incidencias, facilitar el proceso de depuración y validar progresivamente el funcionamiento del sistema sobre un equipo con recursos limitados.
+
+La mayor parte de las pruebas de integración se realizaron utilizando el backend **LOCAL (Ollama)**, ya que fue el primer entorno de inferencia implementado durante el desarrollo del proyecto.
 
 ---
 
@@ -33,7 +52,9 @@ El objetivo fue garantizar que el sistema completo funcionara de forma estable e
 
 ## Hardware utilizado
 
-Características principales:
+Las pruebas fueron realizadas sobre el equipo principal de desarrollo.
+
+Características relevantes:
 
 ```text
 CPU:
@@ -54,17 +75,19 @@ WSL2 Ubuntu
 
 ---
 
-## Software principal
+## Software utilizado
 
 | Componente | Tecnología |
-|-|-|
-| Monitoreo hardware | LibreHardwareMonitor |
-| Servicio térmico | Flask + Python |
-| IA local | Ollama |
-| LLM | llama3.2:3b |
-| Embeddings | nomic-embed-text |
-| RAG | Python |
-| Supervisión | thermal_watchdog.py |
+|------------|------------|
+| Monitorización del hardware | LibreHardwareMonitor |
+| Servicio de adaptación térmica | Flask + Python |
+| Pipeline RAG | Python |
+| Backend LOCAL | Ollama |
+| Backend CLOUD | OpenRouter |
+| Modelo de embeddings | nomic-embed-text |
+| Supervisión térmica | thermal_watchdog.py |
+
+No todas las pruebas utilizaron ambos backends de inferencia; la mayoría fueron realizadas sobre el backend LOCAL.
 
 ---
 
@@ -72,24 +95,24 @@ WSL2 Ubuntu
 
 ## Objetivo
 
-Confirmar que el sistema podía obtener información real del sensor térmico del procesador.
+Confirmar que el sistema podía acceder correctamente a la información proporcionada por los sensores térmicos del equipo.
 
 ---
 
 ## Prueba realizada
 
-Consulta directa:
+Consulta directa al servicio de LibreHardwareMonitor:
 
 ```text
 http://localhost:8085/data.json
 ```
 
-Resultado esperado:
+Resultado esperado (ejemplo simplificado):
 
 ```json
 {
- "Text":"Temperature #1",
- "Value":"45 °C"
+  "Text": "Temperature #1",
+  "Value": "45 °C"
 }
 ```
 
@@ -99,17 +122,19 @@ Resultado esperado:
 
 Validado.
 
-El sensor utilizado corresponde al árbol:
+Se comprobó que el sensor utilizado corresponde al árbol:
 
 ```text
 Nuvoton NCT6776F
 
-    |
-    +-- Temperatures
+        │
+        └── Temperatures
 
-            |
-            +-- Temperature #1
+                │
+                └── Temperature #1
 ```
+
+Este sensor fue posteriormente utilizado por el resto de la arquitectura de supervisión térmica.
 
 ---
 
@@ -117,19 +142,19 @@ Nuvoton NCT6776F
 
 ## Objetivo
 
-Verificar la transformación del JSON de LibreHardwareMonitor en una API simplificada.
+Verificar la transformación de la información generada por LibreHardwareMonitor en una API simplificada accesible desde WSL2.
 
 ---
 
 ## Ejecución
 
-Ubicación:
+Ubicación del proyecto:
 
 ```text
 E:\Developer\Tools\LibreHardwareMonitor\python
 ```
 
-Inicio:
+Inicio del servicio:
 
 ```bat
 start_server.bat
@@ -137,7 +162,7 @@ start_server.bat
 
 ---
 
-## Endpoint generado
+## Endpoint publicado
 
 ```text
 http://localhost:5005/data.json
@@ -151,12 +176,12 @@ Ejemplo:
 
 ```json
 {
- "Max":100,
- "Min":0,
- "Text":"CPU Temperature",
- "Value":44.0,
- "id":0,
- "timestamp":1784056081
+  "id": 0,
+  "Text": "CPU Temperature",
+  "Value": 44.0,
+  "Min": 0,
+  "Max": 100,
+  "timestamp": 1784056081
 }
 ```
 
@@ -166,21 +191,21 @@ Ejemplo:
 
 Validado.
 
-El servicio entrega únicamente la información necesaria para supervisión.
+El servicio publica únicamente la información necesaria para la supervisión térmica, evitando exponer la estructura completa generada por LibreHardwareMonitor.
 
 ---
 
-# 5. Validación comunicación Windows - WSL2
+# 5. Validación de la comunicación Windows ↔ WSL2
 
 ## Objetivo
 
-Comprobar que WSL puede consultar el servicio térmico publicado en Windows.
+Comprobar que el entorno Linux podía acceder correctamente al servicio HTTP publicado desde Windows.
 
 ---
 
-## Prueba realizada desde WSL
+## Prueba realizada desde WSL2
 
-Comando:
+Comando ejecutado:
 
 ```bash
 curl http://192.168.1.36:5005/data.json
@@ -190,10 +215,12 @@ curl http://192.168.1.36:5005/data.json
 
 ## Resultado obtenido
 
+Ejemplo:
+
 ```json
 {
- "Text":"CPU Temperature",
- "Value":45.0
+  "Text": "CPU Temperature",
+  "Value": 45.0
 }
 ```
 
@@ -203,31 +230,39 @@ curl http://192.168.1.36:5005/data.json
 
 Comunicación validada.
 
-El mecanismo utilizado es:
+La resolución de la dirección IP se realiza mediante el mecanismo implementado con:
 
 ```text
 Windows
-    |
-    v
+
+      │
+
+      ▼
+
 windows_ip.txt
-    |
-    v
-WSL
+
+      │
+
+      ▼
+
+WSL2
 ```
+
+Este mecanismo evita depender de direcciones IP configuradas manualmente.
 
 ---
 
-# 6. Validación thermal_watchdog.py
+# 6. Validación de thermal_watchdog.py
 
 ## Objetivo
 
-Comprobar la supervisión continua de temperatura.
+Comprobar el funcionamiento continuo del sistema de supervisión térmica.
 
 ---
 
 ## Ejecución
 
-Desde WSL:
+Desde WSL2:
 
 ```bash
 python3 thermal_watchdog.py
@@ -249,7 +284,7 @@ Ejemplo:
 http://192.168.1.36:5005/data.json
 
 🌡 CPU: 45.00°C | Avg(1):45.00°C | Estado:NORMAL
-🌡 CPU:45.00°C | Avg(5):44.80°C | Estado:NORMAL
+🌡 CPU: 45.00°C | Avg(5):44.80°C | Estado:NORMAL
 ```
 
 ---
@@ -258,12 +293,13 @@ http://192.168.1.36:5005/data.json
 
 Validado.
 
-El watchdog:
+Se comprobó que el watchdog:
 
-* obtiene temperatura,
-* calcula promedio móvil,
-* clasifica estado,
-* mantiene supervisión continua.
+- obtiene periódicamente la temperatura del procesador;
+- calcula el promedio móvil configurado;
+- clasifica el estado térmico;
+- mantiene la supervisión de forma continua;
+- registra eventos cuando corresponde.
 
 ---
 
@@ -271,32 +307,49 @@ El watchdog:
 
 ## Objetivo
 
-Confirmar la ejecución completa del flujo:
+Verificar el funcionamiento del flujo general de una consulta dentro del pipeline RAG.
+
+El proceso validado puede resumirse como:
 
 ```text
-Pregunta
- |
- v
+Consulta
+
+     │
+     ▼
+
 Embedding
- |
- v
-Búsqueda semántica
- |
- v
-Contexto
- |
- v
-Ollama
- |
- v
+
+     │
+     ▼
+
+Recuperación semántica
+
+     │
+     ▼
+
+Preparación del contexto
+
+     │
+     ▼
+
+llm_backend.py
+
+     │
+     ▼
+
+Backend seleccionado
+
+     │
+     ▼
+
 Respuesta
 ```
 
 ---
 
-## Componentes probados
+## Componentes validados
 
-### Embeddings
+### Generación de embeddings
 
 Archivo generado:
 
@@ -304,7 +357,7 @@ Archivo generado:
 embeddings.jsonl
 ```
 
-Validación:
+Resultado observado:
 
 ```text
 Embeddings cargados correctamente
@@ -312,9 +365,9 @@ Embeddings cargados correctamente
 
 ---
 
-### Consulta
+### Ejecución de consultas
 
-Ejecutado:
+Comando utilizado:
 
 ```bash
 python3 query.py
@@ -322,228 +375,249 @@ python3 query.py
 
 ---
 
-## Modos probados
+## Modos evaluados
 
 ### DEPURACIÓN
 
-Modelo:
+Modelo utilizado:
 
 ```text
 qwen2.5-coder:1.5b
 ```
 
-Uso:
+Objetivo:
 
-```text
-Análisis de errores C#
-```
+- análisis de errores de compilación;
+- revisión de código C#;
+- asistencia durante el desarrollo.
 
 ---
 
 ### ARQUITECTURA
 
-Modelo:
+Modelo utilizado:
 
 ```text
 llama3.2:3b
 ```
 
-Uso:
+Objetivo:
 
-```text
-Análisis del sistema
-```
+- análisis de la arquitectura del sistema;
+- comprensión de relaciones entre componentes.
 
 ---
 
 ### DOCUMENTACIÓN
 
-Modelo:
+Modelo utilizado:
 
 ```text
 llama3.2:3b
 ```
 
-Uso:
+Objetivo:
 
-```text
-Generación documental
-```
+- explicación funcional del proyecto;
+- generación de documentación técnica.
 
 ---
-
-# 8. Validación control térmico durante cargas altas
+# 8. Validación del comportamiento térmico
 
 ## Objetivo
 
-Evaluar comportamiento térmico durante procesos intensivos.
+Evaluar el comportamiento térmico del equipo durante la ejecución de tareas con alta carga de procesamiento.
 
 ---
 
-## Prueba realizada
+## Pruebas realizadas
 
-Proceso:
+Se realizaron pruebas principalmente durante:
 
-```text
-Generación de embeddings
-```
+- generación masiva de embeddings;
+- consultas RAG con modelos locales;
+- ejecución continuada del pipeline.
 
 ---
 
-## Observación
+## Observaciones
 
-Durante cargas elevadas:
+Durante las tareas más intensivas se observaron:
 
 ```text
-CPU cercana al 100%
+Uso elevado del procesador
+(próximo al 100 %)
 ```
 
-se observó aumento de temperatura.
+acompañado por un incremento significativo de la temperatura.
 
-Ejemplo:
+En algunas pruebas se registraron temperaturas cercanas a:
 
 ```text
-Temperatura aproximada:
 70 °C
 ```
 
----
-
-## Acción tomada
-
-Se incorporaron:
-
-* control de carga,
-* pausas configurables,
-* supervisión térmica,
-* mecanismo de abortado.
+Estos resultados confirmaron la necesidad de incorporar mecanismos de protección para preservar la estabilidad del sistema durante ejecuciones prolongadas.
 
 ---
 
-# 9. Validación logger.py
+## Medidas implementadas
+
+Como resultado de las pruebas se incorporaron diferentes mecanismos de protección, entre ellos:
+
+- control de carga durante la generación de embeddings;
+- pausas configurables entre operaciones intensivas;
+- supervisión térmica continua;
+- detención automática del proceso cuando se alcanzan condiciones críticas.
+
+---
+
+# 9. Validación de logger.py
 
 ## Objetivo
 
-Registrar el comportamiento interno de las consultas RAG.
+Verificar el registro cronológico de las operaciones realizadas durante la ejecución del pipeline.
 
 ---
 
-## Información registrada
+## Eventos registrados
 
-Ejemplo:
+Entre los eventos observados durante las pruebas se encuentran:
 
 ```text
 SESSION_START
-
 MODE_SELECTED
-
 INPUT_RECEIVED
-
 EMBEDDING_START
-
+EMBEDDING_OK
 SEARCH_START
-
+SEARCH_DONE
 LLM_START
-
 LLM_DONE
+SESSION_END
 ```
 
-Incluyendo:
+Además del flujo de ejecución, el registro incorpora información como:
 
-```text
-Tiempo transcurrido
-Temperatura
-Estado térmico
-Modo seleccionado
-```
+- tiempo transcurrido;
+- temperatura del sistema;
+- estado térmico;
+- modo de operación seleccionado;
+- backend utilizado (cuando corresponde).
+
+---
+
+## Resultado
+
+Validado.
+
+El registro generado facilita el análisis posterior de incidencias y el seguimiento del comportamiento del sistema durante las pruebas.
 
 ---
 
 # 10. Problemas encontrados y soluciones
 
-## Problema: acceso térmico desde WSL
+## Problema: acceso al servicio térmico desde WSL2
 
 ### Situación inicial
 
-WSL no podía acceder directamente al endpoint local de Windows.
+El entorno WSL2 no podía acceder directamente al servicio publicado en Windows utilizando `localhost`.
 
 ---
 
 ### Solución
 
-Implementación:
+Se implementó un mecanismo de descubrimiento basado en:
 
 ```text
 windows_ip.txt
 ```
 
-y descubrimiento automático.
+con respaldo mediante la detección automática del gateway de WSL2.
 
 ---
 
-## Problema: detección incorrecta del sensor
+## Problema: identificación del sensor térmico
 
 ### Situación inicial
 
-El JSON de LibreHardwareMonitor contiene muchos sensores.
+El archivo JSON generado por LibreHardwareMonitor contiene una gran cantidad de sensores, muchos de ellos no relacionados con la temperatura del procesador.
 
 ---
 
 ### Solución
 
-Búsqueda específica:
+Se implementó una búsqueda específica del sensor correspondiente a:
 
 ```text
 Nuvoton NCT6776F
-    |
-    Temperature #1
+
+        │
+
+        ▼
+
+Temperature #1
 ```
+
+garantizando la utilización del mismo sensor en todas las pruebas.
 
 ---
 
-## Problema: consumo excesivo durante embeddings
+## Problema: carga elevada durante la generación de embeddings
 
 ### Situación inicial
 
-La generación masiva de embeddings elevaba considerablemente la temperatura.
+La generación masiva de embeddings produjo un incremento considerable del uso del procesador y de la temperatura del sistema.
 
 ---
 
 ### Solución
 
-Implementación de:
+Se incorporaron progresivamente:
 
-* control de carga,
-* pausas,
-* watchdog térmico.
+- control de carga;
+- pausas configurables;
+- supervisión térmica continua;
+- watchdog de protección.
+
+Estas medidas permitieron mejorar la estabilidad del entorno durante ejecuciones prolongadas.
 
 ---
 
 # 11. Estado actual de validación
 
-Actualmente están validados:
+Hasta el momento se han validado satisfactoriamente los siguientes componentes:
 
 | Componente | Estado |
-|-|-|
-| LibreHardwareMonitor | OK |
-| export_temp_server.py | OK |
-| Comunicación Windows-WSL | OK |
-| thermal_watchdog.py | OK |
-| Ollama | OK |
-| Embeddings | OK |
-| Consulta RAG | OK |
-| Protección térmica | OK |
-| Logger | OK |
+|------------|:------:|
+| LibreHardwareMonitor | ✅ |
+| export_temp_server.py | ✅ |
+| Comunicación Windows ↔ WSL2 | ✅ |
+| thermal_watchdog.py | ✅ |
+| logger.py | ✅ |
+| Generación de embeddings | ✅ |
+| Recuperación documental | ✅ |
+| Pipeline RAG | ✅ |
+| Backend LOCAL (Ollama) | ✅ |
+| Protección térmica | ✅ |
+
+La arquitectura incorpora además soporte para un backend CLOUD mediante OpenRouter, cuya integración forma parte de la evolución del sistema.
 
 ---
 
 # 12. Conclusión
 
-Las pruebas realizadas demuestran que la arquitectura completa puede ejecutar un sistema RAG local con modelos LLM, incorporando supervisión térmica y mecanismos automáticos de protección.
+Las pruebas realizadas permitieron validar progresivamente la arquitectura implementada, verificando tanto los componentes individuales como su funcionamiento integrado.
 
-El sistema actualmente permite experimentar con inteligencia artificial local manteniendo control sobre:
+En particular, se comprobó el correcto funcionamiento de:
 
-* datos,
-* modelos,
-* recursos computacionales,
-* estabilidad térmica.
+- la ingestión documental;
+- la generación de embeddings;
+- la recuperación semántica;
+- el pipeline RAG;
+- la supervisión térmica;
+- el registro de eventos durante la ejecución.
+
+Las pruebas también permitieron identificar limitaciones derivadas del hardware disponible, motivando la incorporación de mecanismos específicos de protección térmica y la posterior evolución hacia una arquitectura con soporte para distintos backends de inferencia.
+
+En su estado actual, el proyecto constituye una plataforma experimental estable para el desarrollo y evaluación de arquitecturas RAG, manteniendo un equilibrio entre capacidad de experimentación, protección del hardware y coherencia entre la implementación y la documentación técnica.

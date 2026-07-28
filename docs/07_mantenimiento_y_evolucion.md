@@ -2,48 +2,48 @@
 
 ## 1. Introducción
 
-La arquitectura RAG local con supervisión térmica fue diseñada como un sistema experimental pero estructurado, donde cada componente mantiene responsabilidades independientes.
+La arquitectura del proyecto fue diseñada siguiendo un enfoque modular, donde cada componente mantiene responsabilidades claramente definidas y un bajo nivel de acoplamiento.
 
-Debido a que integra inteligencia artificial local, monitoreo de hardware y automatización de procesos, el mantenimiento debe considerar tanto la capa de software como la capa de infraestructura.
+El sistema integra procesamiento documental, recuperación semántica, modelos de lenguaje, supervisión térmica y mecanismos de registro, por lo que las tareas de mantenimiento abarcan tanto el entorno de ejecución como los componentes software que forman el pipeline RAG.
 
 Los principales objetivos del mantenimiento son:
 
-* conservar la estabilidad del entorno,
-* garantizar la disponibilidad de los servicios,
-* mantener actualizados los modelos y dependencias,
-* preservar la capacidad de diagnóstico,
-* permitir la incorporación progresiva de nuevas funcionalidades.
+- conservar la estabilidad del entorno de ejecución;
+- garantizar la disponibilidad de los servicios requeridos;
+- mantener actualizados los modelos y dependencias;
+- facilitar el diagnóstico mediante registros de ejecución;
+- permitir la incorporación progresiva de nuevas funcionalidades sin afectar la arquitectura existente.
 
 ---
 
 # 2. Organización actual del sistema
 
-La arquitectura está distribuida en dos ambientes principales.
+La arquitectura se distribuye entre dos entornos principales que colaboran entre sí.
 
 ## Windows
 
-Ubicación:
+Ubicación de los componentes de supervisión térmica:
 
 ```text
 E:\Developer\Tools\LibreHardwareMonitor\python
 ```
 
-Responsabilidades:
+Responsabilidades principales:
 
-* acceso a sensores físicos,
-* ejecución de LibreHardwareMonitor,
-* publicación de temperatura mediante Flask,
-* generación del archivo de descubrimiento de IP.
+- acceso a los sensores físicos del equipo;
+- ejecución de LibreHardwareMonitor;
+- publicación de la temperatura mediante Flask;
+- generación del archivo de descubrimiento de IP para WSL2.
 
-Componentes principales:
+Arquitectura simplificada:
 
 ```text
 LibreHardwareMonitor
-        |
-        v
+        │
+        ▼
 export_temp_server.py
-        |
-        v
+        │
+        ▼
 windows_ip.txt
 ```
 
@@ -51,74 +51,107 @@ windows_ip.txt
 
 ## WSL2 Ubuntu
 
-Ubicación:
+Ubicación del proyecto:
 
 ```text
-/home/manuelc/rag_maui_docs_for_rag/scripts
+/home/manuelc/rag_maui_docs_for_rag
 ```
 
-Responsabilidades:
+Responsabilidades principales:
 
-* ejecución del pipeline RAG,
-* interacción con Ollama,
-* generación de embeddings,
-* consulta semántica,
-* supervisión térmica.
+- ejecución del pipeline RAG;
+- procesamiento documental;
+- generación de embeddings;
+- recuperación semántica;
+- comunicación con el backend de inferencia;
+- supervisión térmica;
+- registro de consultas.
 
-Componentes principales:
+Arquitectura simplificada:
 
 ```text
 ingest.py
-    |
-    v
+      │
+      ▼
+
+output_raw.jsonl
+      │
+      ▼
+
 embed.py
-    |
-    v
+      │
+      ▼
+
 embeddings.jsonl
-    |
-    v
+
+symbol_extractor.py
+      │
+      ▼
+
+symbols.jsonl
+
+      │
+      ▼
+
 query.py
+      │
+      ▼
+
+llm_backend.py
+
+      │
+ ┌────┴─────┐
+ ▼          ▼
+
+LOCAL     CLOUD
+
+Ollama   OpenRouter
+
+logger.py
 
 thermal_watchdog.py
-logger.py
 ```
+
+Los componentes auxiliares (`logger.py` y `thermal_watchdog.py`) funcionan de manera desacoplada respecto al flujo principal de inferencia.
 
 ---
 
 # 3. Mantenimiento operativo
 
-## 3.1 Inicio normal del sistema
+## Inicio recomendado del sistema
 
-El orden recomendado de ejecución es:
+Para garantizar el funcionamiento correcto del entorno se recomienda seguir el siguiente orden de ejecución.
+
+---
 
 ### Paso 1
 
 Iniciar LibreHardwareMonitor en Windows.
 
-Verificar que los sensores estén disponibles.
+Verificar que los sensores se encuentren disponibles y que el archivo JSON pueda consultarse correctamente.
 
 ---
 
 ### Paso 2
 
-Iniciar el servicio térmico:
+Iniciar el servicio de exportación térmica:
 
 ```bat
 start_server.bat
 ```
 
-Validar:
+Comprobar posteriormente el endpoint:
 
 ```text
 http://localhost:5005/data.json
 ```
 
-Ejemplo esperado:
+Ejemplo de respuesta:
 
 ```json
 {
- "Text":"CPU Temperature",
- "Value":45.0
+  "Text": "CPU Temperature",
+  "Value": 45.0
 }
 ```
 
@@ -126,16 +159,17 @@ Ejemplo esperado:
 
 ### Paso 3
 
-Iniciar watchdog en WSL:
+Iniciar el watchdog térmico desde WSL2:
 
 ```bash
 python3 thermal_watchdog.py
 ```
 
-Salida esperada:
+Salida esperada (ejemplo):
 
 ```text
 🟢 Thermal Watchdog iniciado
+
 🌡 CPU: 45.00°C | Estado: NORMAL
 ```
 
@@ -143,105 +177,151 @@ Salida esperada:
 
 ### Paso 4
 
-Ejecutar consultas RAG:
+Activar el entorno virtual de Python:
+
+```bash
+source venv_rag/bin/activate
+```
+
+---
+
+### Paso 5
+
+Iniciar el servicio de Ollama:
+
+```bash
+ollama serve
+```
+
+> **Nota:** Si Ollama ya se encuentra ejecutándose como servicio, este paso puede omitirse.
+
+---
+
+### Paso 6
+
+Ejecutar el pipeline RAG:
 
 ```bash
 python3 query.py
 ```
 
+Durante el inicio de la aplicación el usuario selecciona:
+
+- el modo de operación;
+- el backend de inferencia (LOCAL o CLOUD);
+- el modelo correspondiente, según la configuración de la sesión.
+
 ---
 
-# 4. Mantenimiento de datos RAG
+# 4. Mantenimiento de los datos RAG
 
-La base de conocimiento se genera mediante el siguiente flujo:
+La información utilizada durante la recuperación semántica se genera mediante un proceso de indexación documental.
+
+Flujo general:
 
 ```text
-Código / Documentos
-        |
-        v
+Documentos
+
+      │
+      ▼
+
 ingest.py
-        |
-        v
+
+      │
+      ▼
+
 output_raw.jsonl
-        |
-        v
-embed.py
-        |
-        v
-embeddings.jsonl
+
+      │
+      ├──────────────┐
+      ▼              ▼
+
+embed.py     symbol_extractor.py
+
+      │              │
+      ▼              ▼
+
+embeddings.jsonl   symbols.jsonl
 ```
 
-Cuando cambia la información documental se recomienda regenerar los embeddings.
+Cuando cambia la documentación o el código fuente del proyecto, se recomienda regenerar los índices correspondientes.
 
-Ejemplos:
+Entre las situaciones habituales se encuentran:
 
-* cambios importantes en el proyecto MAUI,
-* nuevos documentos técnicos,
-* actualización de arquitectura,
-* incorporación de nuevos módulos.
+- incorporación de nuevos documentos;
+- modificaciones relevantes del código fuente;
+- cambios en la arquitectura del sistema;
+- reorganización del proyecto;
+- incorporación de nuevos módulos o funcionalidades.
 
----
-
-# 5. Mantenimiento de modelos
-
-El sistema utiliza modelos locales mediante Ollama.
-
-Modelos actuales:
-
-## Modelo de embeddings
-
-```text
-nomic-embed-text
-```
-
-Responsabilidad:
-
-* representación vectorial del conocimiento.
+Mantener actualizados estos archivos garantiza una recuperación documental coherente con el estado real del proyecto.
 
 ---
 
-## Modelo de lenguaje
+# 5. Mantenimiento de modelos y backends
 
-```text
-llama3.2:3b
-```
+La generación de respuestas se encuentra desacoplada del pipeline mediante `llm_backend.py`, permitiendo utilizar distintos proveedores de inferencia.
 
-Responsabilidad:
+## Backend LOCAL
 
-* generación de respuestas,
-* análisis arquitectónico,
-* asistencia técnica.
+El backend local utiliza Ollama para ejecutar modelos instalados en el equipo.
 
----
+Modelos actualmente configurados:
 
-## Modelo especializado
+| Función | Modelo |
+|----------|--------|
+| Embeddings | `nomic-embed-text` |
+| Depuración | `qwen2.5-coder:1.5b` |
+| Arquitectura | `llama3.2:3b` |
+| Documentación | `llama3.2:3b` |
 
-```text
-qwen2.5-coder:1.5b
-```
+Las actualizaciones de modelos deben evaluarse considerando aspectos como:
 
-Responsabilidad:
+- memoria disponible;
+- carga del procesador;
+- temperatura alcanzada;
+- velocidad de respuesta;
+- calidad de las respuestas obtenidas.
 
-* apoyo en depuración de código.
-
----
-
-Las actualizaciones de modelos deben evaluarse considerando:
-
-* memoria disponible,
-* temperatura generada,
-* velocidad de respuesta,
-* calidad de resultados.
-
-En hardware limitado, un modelo más grande no siempre representa una mejora práctica.
+En equipos con recursos limitados, un modelo de mayor tamaño no siempre representa una mejora práctica.
 
 ---
 
+## Backend CLOUD
+
+El backend cloud utiliza OpenRouter como proveedor de inferencia remota.
+
+Su mantenimiento incluye, entre otros aspectos:
+
+- verificar la disponibilidad de la API Key;
+- comprobar la conectividad con el servicio;
+- validar el modelo configurado para cada sesión;
+- revisar posibles cambios en la configuración del proveedor.
+
+La utilización de este backend permite mantener el mismo flujo RAG sin depender exclusivamente de la capacidad de procesamiento del hardware local.
+
+---
+
+## Evolución de los modelos
+
+La incorporación de nuevos modelos debe realizarse procurando mantener la compatibilidad con la arquitectura existente.
+
+Se recomienda evaluar previamente:
+
+- calidad de las respuestas;
+- consumo de recursos;
+- compatibilidad con el hardware disponible;
+- impacto sobre la temperatura del sistema;
+- tiempo de respuesta durante las consultas.
+
+La separación entre `query.py` y `llm_backend.py` facilita la incorporación de nuevos modelos o proveedores de inferencia con un impacto mínimo sobre el resto del sistema.
+
+---
 # 6. Diagnóstico y registros
 
-El sistema incorpora mecanismos de observabilidad.
+La arquitectura incorpora mecanismos de registro que facilitan el análisis del comportamiento del sistema y el diagnóstico de incidencias.
 
-## Logs térmicos
+## Registros de supervisión térmica
 
 Generados por:
 
@@ -249,16 +329,19 @@ Generados por:
 thermal_watchdog.py
 ```
 
-Permiten analizar:
+Estos registros permiten analizar información como:
 
-* temperatura alcanzada,
-* motivo de protección,
-* eventos críticos,
-* acciones ejecutadas.
+- temperatura del procesador;
+- promedio móvil utilizado para la toma de decisiones;
+- estado térmico detectado;
+- eventos críticos;
+- acciones de protección ejecutadas.
+
+La información queda almacenada en un archivo de registro para su posterior análisis.
 
 ---
 
-## Logs de consulta RAG
+## Registros del pipeline RAG
 
 Generados por:
 
@@ -266,211 +349,268 @@ Generados por:
 logger.py
 ```
 
-Registran:
-
-* inicio de sesión,
-* modo seleccionado,
-* modelo utilizado,
-* etapas del procesamiento,
-* tiempos de ejecución,
-* temperatura durante la consulta.
+Durante cada consulta se registran eventos representativos del flujo de ejecución.
 
 Ejemplo conceptual:
 
 ```text
 SESSION_START
 
-MODE_SELECTED=ARCH
+MODE_SELECTED
+
+INPUT_RECEIVED
 
 EMBEDDING_START
 
-SEARCH_DONE
+SEARCH_START
 
 LLM_START
 
 LLM_DONE
+
+SESSION_END
 ```
 
-Estos registros permiten identificar cuellos de botella durante una consulta.
+Dependiendo de la configuración de la aplicación, los registros pueden incluir información adicional como:
+
+- modo de operación seleccionado;
+- backend utilizado;
+- modelo empleado;
+- tiempos de ejecución;
+- temperatura registrada;
+- eventos de interrupción.
+
+Estos registros facilitan el análisis del rendimiento del sistema y la identificación de posibles cuellos de botella.
 
 ---
 
 # 7. Copias de seguridad
 
-Se recomienda conservar:
+Se recomienda realizar copias de seguridad periódicas de los componentes más importantes del proyecto.
 
 ## Código fuente
+
+Directorio principal:
 
 ```text
 scripts/
 ```
 
-Incluye:
+Incluye, entre otros:
 
-* ingest.py
-* embed.py
-* query.py
-* thermal_watchdog.py
-* logger.py
+- ingest.py
+- chunk.py
+- embed.py
+- symbol_extractor.py
+- query.py
+- llm_backend.py
+- logger.py
+- thermal_watchdog.py
 
 ---
 
-## Base documental
+## Índices documentales
+
+Archivos generados durante el procesamiento:
 
 ```text
 embeddings.jsonl
+
 symbols.jsonl
 ```
 
+Estos archivos pueden regenerarse, pero conservar una copia evita repetir procesos de indexación cuando la documentación no ha cambiado.
+
 ---
 
-## Documentación
+## Documentación técnica
+
+Directorio:
 
 ```text
-Arquitectura_RAG_Termica/docs
+docs/
 ```
 
----
-
-## Configuración Ollama
-
-Registrar:
-
-* modelos instalados,
-* versiones,
-* parámetros utilizados.
+Se recomienda mantener sincronizada la documentación con la evolución del código para evitar inconsistencias entre ambos.
 
 ---
 
-# 8. Posibles mejoras futuras
+## Configuración del entorno
 
-La arquitectura actual permite evolucionar hacia nuevas capacidades.
+Conviene conservar la configuración relacionada con:
 
----
-
-## 8.1 Mayor observabilidad
-
-Incorporar:
-
-* uso de CPU,
-* uso de memoria RAM,
-* consumo energético,
-* carga del sistema,
-* tiempo de respuesta del modelo.
+- entorno virtual de Python;
+- modelos instalados en Ollama;
+- configuración del backend CLOUD;
+- archivos de configuración (`.env`);
+- scripts auxiliares utilizados durante el desarrollo.
 
 ---
 
-## 8.2 Supervisión avanzada
+# 8. Evolución prevista
 
-Actualmente la protección se basa principalmente en temperatura CPU.
+La arquitectura actual fue diseñada para facilitar la incorporación gradual de nuevas capacidades.
 
-Posibles extensiones:
+Las siguientes mejoras representan posibles líneas de evolución y no forman parte de la implementación actual.
+
+---
+
+## Mayor observabilidad
+
+Entre las posibles ampliaciones se encuentran:
+
+- utilización del procesador;
+- consumo de memoria RAM;
+- carga del sistema;
+- tiempos de respuesta;
+- métricas de recuperación documental;
+- métricas de inferencia.
+
+---
+
+## Supervisión térmica ampliada
+
+Actualmente la supervisión se centra principalmente en la temperatura del procesador.
+
+En futuras versiones podrían incorporarse otros indicadores como:
 
 ```text
 CPU
- |
- +-- Temperatura
- |
- +-- Uso %
- |
- +-- Frecuencia
- |
- +-- Carga sostenida
+
+ │
+
+ ├── Temperatura
+
+ ├── Utilización
+
+ ├── Frecuencia
+
+ └── Carga sostenida
 ```
 
 ---
 
-## 8.3 Gestión inteligente de modelos
+## Gestión dinámica de modelos
 
-Futuras versiones podrían seleccionar modelos automáticamente:
+Una posible evolución consiste en seleccionar automáticamente el backend o el modelo más adecuado según las condiciones del sistema.
 
-Ejemplo:
+Ejemplo conceptual:
 
 ```text
-Temperatura baja
-        |
-        v
-Modelo grande
+Carga baja
+      │
+      ▼
+Modelo de mayor capacidad
 
-Temperatura alta
-        |
-        v
-Modelo reducido
+Carga elevada
+      │
+      ▼
+Modelo ligero o backend CLOUD
 ```
 
 ---
 
-## 8.4 Integración con Ollama
+## Automatización del entorno
 
-Posibles mejoras:
+Entre las posibles mejoras futuras se encuentran:
 
-* iniciar/detener modelos automáticamente,
-* liberar memoria después de consultas,
-* seleccionar modelos según tarea,
-* limitar concurrencia.
+- inicio automático de servicios;
+- comprobación de dependencias;
+- verificación del estado del entorno;
+- administración automática de modelos;
+- limpieza de recursos al finalizar una sesión.
 
 ---
 
-## 8.5 Interfaz de administración
+## Herramientas de administración
 
-La arquitectura podría evolucionar hacia un panel de control:
+Otra posible evolución consiste en desarrollar una interfaz que permita supervisar el estado general del sistema.
+
+Ejemplo:
 
 ```text
 Dashboard
 
 Temperatura CPU
-Estado RAG
-Modelo activo
+
+Estado del pipeline
+
+Backend activo
+
+Modelo utilizado
+
 Consultas realizadas
-Eventos térmicos
+
+Eventos registrados
 ```
 
 ---
 
 # 9. Consideraciones para hardware limitado
 
-El diseño actual considera las restricciones del equipo utilizado.
+La arquitectura fue desarrollada teniendo en cuenta las características del equipo utilizado durante el proyecto.
 
-Por esta razón se aplican estrategias como:
+Por este motivo se adoptaron diversas estrategias orientadas a mejorar la estabilidad del sistema:
 
-* modelos pequeños,
-* ejecución local,
-* control térmico,
-* separación Windows / WSL2,
-* registro de eventos,
-* supervisión automática.
+- utilización de modelos ligeros para ejecución local;
+- separación entre Windows y WSL2;
+- supervisión térmica desacoplada;
+- registro detallado de eventos;
+- posibilidad de utilizar un backend CLOUD para reducir la carga local.
 
-El objetivo no es solamente obtener respuestas mediante IA, sino construir un entorno estable y controlado.
+Estas decisiones permitieron desarrollar y evaluar el sistema sin requerir hardware especializado para inteligencia artificial.
 
 ---
 
-# 10. Estado de evolución del proyecto
+# 10. Estado actual del proyecto
 
-La arquitectura actual representa una primera versión funcional:
+En su estado actual, el proyecto dispone de una arquitectura funcional compuesta por:
 
 ```text
-RAG local
-        +
-LLM local
-        +
+Pipeline RAG
+
+        │
+
+        ▼
+
+Recuperación semántica
+
+        │
+
+        ▼
+
+llm_backend.py
+
+        │
+
+ ┌──────┴──────┐
+
+ ▼             ▼
+
+LOCAL       CLOUD
+
+        │
+
+        ▼
+
 Supervisión térmica
-        +
-Protección automática
+
+        │
+
+        ▼
+
+Registro de ejecución
 ```
 
-Las próximas etapas pueden orientarse hacia:
-
-* mayor automatización,
-* mejor observabilidad,
-* integración con nuevos sensores,
-* optimización del rendimiento,
-* publicación como proyecto técnico demostrativo.
+La arquitectura continúa en evolución y sirve como plataforma experimental para el estudio de técnicas de recuperación documental, inferencia con modelos de lenguaje y supervisión de recursos en hardware limitado.
 
 ---
 
 # 11. Conclusión
 
-El sistema construido demuestra que es posible integrar inteligencia artificial local, recuperación documental y mecanismos de protección del hardware mediante una arquitectura modular.
+La organización modular del proyecto facilita el mantenimiento y la evolución de cada uno de sus componentes de forma independiente.
 
-La separación de responsabilidades permite mantener el sistema comprensible, extensible y adaptable a diferentes escenarios de ejecución local de modelos de lenguaje.
+La separación entre el procesamiento documental, la recuperación semántica, la inferencia mediante modelos de lenguaje y la supervisión térmica permite incorporar mejoras progresivas sin modificar la estructura general del sistema.
+
+En conjunto, la arquitectura proporciona una base sólida para continuar experimentando con soluciones RAG locales e híbridas, manteniendo la coherencia entre la implementación, la documentación técnica y los objetivos de investigación del proyecto.
 

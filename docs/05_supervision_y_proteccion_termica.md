@@ -2,21 +2,23 @@
 
 ## 1. Introducción
 
-La ejecución local de modelos de inteligencia artificial puede generar una carga elevada sobre el procesador, especialmente durante:
+La ejecución del pipeline RAG puede generar una carga elevada sobre el procesador, especialmente durante tareas como:
 
-* generación de embeddings,
-* inferencia mediante modelos LLM,
-* consultas prolongadas mediante RAG.
+- generación de embeddings;
+- recuperación semántica;
+- inferencia mediante modelos LLM ejecutados localmente.
 
-Debido a que el proyecto se ejecuta sobre hardware limitado y sin aceleración GPU dedicada, se incorporó una arquitectura de supervisión térmica independiente que permite:
+Con el objetivo de proteger el hardware utilizado durante el desarrollo, el proyecto incorpora una arquitectura de supervisión térmica desacoplada del pipeline principal.
 
-* obtener información real del hardware,
-* monitorear la temperatura del CPU,
-* detectar condiciones críticas,
-* registrar eventos,
-* detener procesos cuando existe riesgo térmico.
+Esta arquitectura permite:
 
-La supervisión térmica funciona como una capa externa de protección del sistema RAG.
+- obtener información real de los sensores del equipo;
+- supervisar continuamente la temperatura del procesador;
+- detectar condiciones térmicas críticas;
+- registrar eventos relevantes;
+- ejecutar acciones de protección cuando sea necesario.
+
+La supervisión térmica funciona como un subsistema independiente del pipeline RAG y mantiene el mismo funcionamiento independientemente del backend de inferencia seleccionado (LOCAL o CLOUD).
 
 ---
 
@@ -341,22 +343,35 @@ Protección inmediata.
 
 ---
 
-# 9. Integración con query.py
+# 9. Integración con el pipeline RAG
 
-La protección térmica está integrada mediante:
+La supervisión térmica funciona de forma desacoplada respecto al pipeline principal. 
+Mientras query.py ejecuta el procesamiento RAG y logger.py registra la actividad de 
+la consulta, thermal_watchdog.py supervisa continuamente la temperatura del sistema 
+y puede ejecutar acciones de protección cuando se alcanzan los umbrales 
+configurados.
 
 ```text
-query.py
+                 query.py
 
-    |
-    v
+                /       \
 
-logger.py
+               v         v
 
-    |
-    v
+        logger.py   Ejecución RAG
 
-thermal_watchdog.py
+                         │
+
+                         ▼
+
+              thermal_watchdog.py
+                   (proceso independiente)
+
+                         │
+
+                         ▼
+
+            Protección del sistema
 ```
 
 Durante la consulta se verifican puntos críticos:
@@ -490,59 +505,87 @@ watchdog desbloqueado
 
 # 14. Filosofía de diseño
 
-La protección térmica fue diseñada bajo los siguientes principios:
+La arquitectura de supervisión térmica fue diseñada siguiendo principios de modularidad y bajo acoplamiento, manteniendo separadas las responsabilidades de adquisición de datos, supervisión y ejecución del pipeline RAG.
 
 ## Separación de responsabilidades
 
+Cada componente cumple una función específica dentro del sistema:
+
 ```text
 LibreHardwareMonitor
-        |
-        v
-Adquisición hardware
+        │
+        ▼
+Adquisición de datos
+del hardware
 
-
+        │
+        ▼
 export_temp_server.py
-        |
-        v
-Adaptación
+        │
+        ▼
+Adaptación y publicación
+mediante HTTP (Flask)
 
-
+        │
+        ▼
 thermal_watchdog.py
-        |
-        v
-Decisión
+        │
+        ▼
+Supervisión y toma
+de decisiones
 
-
+        │
+        ▼
 query.py
-        |
-        v
-Aplicación IA
+        │
+        ▼
+Pipeline RAG
 ```
+
+Esta organización facilita el mantenimiento del sistema y permite modificar cualquiera de los componentes sin afectar significativamente al resto de la arquitectura.
+
+---
+
+## Desacoplamiento
+
+La supervisión térmica se ejecuta como un proceso independiente del pipeline RAG.
+
+Esta decisión permite mantener separadas las responsabilidades de:
+
+- adquisición de datos del hardware;
+- supervisión térmica;
+- procesamiento documental;
+- generación de respuestas mediante modelos LLM.
+
+Como consecuencia, el pipeline principal no necesita incorporar lógica específica relacionada con sensores, controladores de hardware o mecanismos de protección térmica.
 
 ---
 
 ## Bajo acoplamiento
 
-El pipeline RAG no necesita conocer:
+El pipeline RAG no necesita conocer detalles de implementación relacionados con:
 
-* sensores,
-* fabricantes,
-* chips,
-* LibreHardwareMonitor.
+- sensores físicos;
+- fabricantes del hardware;
+- chips de monitorización;
+- LibreHardwareMonitor;
+- mecanismos de adquisición de temperatura.
 
-Solo recibe una señal externa de seguridad.
+La única interacción entre ambos subsistemas consiste en la aplicación de acciones de protección cuando el watchdog detecta condiciones térmicas críticas.
+
+Esta separación favorece la reutilización de los componentes y permite sustituir el mecanismo de adquisición de datos térmicos sin modificar el funcionamiento del pipeline RAG.
+
 
 ---
-
 # 15. Estado actual
 
-Actualmente el sistema permite:
+Actualmente el sistema proporciona:
 
-* monitoreo térmico en tiempo real,
-* comunicación Windows-WSL,
-* detección de temperatura crítica,
-* registro de eventos,
-* protección automática del proceso RAG.
+- monitoreo térmico continuo mediante LibreHardwareMonitor;
+- comunicación entre Windows y WSL2 mediante un servicio HTTP basado en Flask;
+- supervisión independiente mediante `thermal_watchdog.py`;
+- registro detallado de eventos durante la ejecución del pipeline;
+- protección automática frente a condiciones de sobretemperatura.
 
-Esta capa convierte una ejecución experimental de IA local en un sistema más seguro y controlado para hardware limitado.
+La supervisión térmica constituye un componente desacoplado de la arquitectura y protege la ejecución del pipeline independientemente del backend de inferencia utilizado (LOCAL mediante Ollama o CLOUD mediante OpenRouter).
 

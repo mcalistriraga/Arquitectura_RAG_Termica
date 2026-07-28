@@ -2,208 +2,262 @@
 
 ## Nombre del proyecto
 
-**Arquitectura RAG local con supervisión térmica y mecanismos de protección para ejecución segura en hardware limitado**
+**Arquitectura RAG híbrida con supervisión térmica y arquitectura desacoplada para asistentes técnicos**
 
 ---
 
 # 1. Descripción general
 
-Este proyecto explora la ejecución local de modelos de lenguaje (LLM) mediante una arquitectura de Recuperación Aumentada de Generación (**RAG - Retrieval Augmented Generation**), incorporando mecanismos de supervisión y protección del sistema para operar de forma segura en equipos con recursos computacionales limitados.
+**Arquitectura_RAG_Termica** es un proyecto experimental cuyo propósito es diseñar e implementar una arquitectura **RAG (Retrieval-Augmented Generation)** modular, desacoplada y ampliamente documentada, orientada a la construcción de asistentes técnicos especializados.
 
-La propuesta combina:
+El proyecto combina distintas áreas de la ingeniería de software y de la inteligencia artificial:
 
-* procesamiento documental local,
-* generación de embeddings,
-* recuperación semántica de información,
-* modelos de lenguaje ejecutados localmente mediante Ollama,
-* supervisión térmica del hardware,
-* mecanismos automáticos de protección ante condiciones críticas.
+- procesamiento documental local;
+- generación de embeddings;
+- recuperación semántica de información;
+- inferencia mediante modelos de lenguaje;
+- observabilidad del pipeline;
+- supervisión térmica del hardware;
+- mecanismos automáticos de protección.
 
-El objetivo principal es construir una arquitectura experimental que permita utilizar capacidades de inteligencia artificial generativa sin depender exclusivamente de servicios externos, manteniendo el control sobre los datos, los modelos y los recursos del equipo.
+La arquitectura ha evolucionado desde un sistema basado exclusivamente en modelos locales hacia una arquitectura híbrida en la que la recuperación del conocimiento permanece local mientras que la inferencia puede realizarse mediante distintos proveedores sin modificar el núcleo del sistema.
+
+El objetivo principal no consiste únicamente en obtener respuestas mediante inteligencia artificial, sino en construir una arquitectura organizada, mantenible y preparada para evolucionar de forma progresiva.
 
 ---
 
 # 2. Motivación
 
-Los modelos de lenguaje locales ofrecen ventajas importantes:
+Los modelos de lenguaje ofrecen nuevas posibilidades para la consulta de documentación técnica, el análisis de código y la asistencia al desarrollo de software.
 
-* privacidad de la información,
-* independencia de servicios externos,
-* posibilidad de experimentar y aprender sobre arquitecturas de IA,
-* control completo del entorno de ejecución.
+Al mismo tiempo, su ejecución representa importantes desafíos cuando se trabaja sobre equipos con recursos limitados, especialmente durante tareas como:
 
-Sin embargo, su ejecución puede representar una carga importante para equipos con recursos limitados, especialmente durante:
-
-* generación de embeddings sobre grandes volúmenes documentales,
-* consultas con modelos locales,
-* procesos prolongados de inferencia.
+- generación masiva de embeddings;
+- recuperación semántica sobre bases documentales;
+- procesos de inferencia prolongados.
 
 Estas cargas pueden provocar:
 
-* aumento sostenido de temperatura del procesador,
-* pérdida de estabilidad del sistema,
-* degradación del rendimiento,
-* interrupción inesperada de procesos.
+- incremento sostenido de la temperatura del procesador;
+- reducción del rendimiento del sistema;
+- pérdida de estabilidad;
+- interrupción inesperada de procesos.
 
-Para abordar este escenario se incorpora una capa de supervisión térmica capaz de monitorear el comportamiento del hardware y actuar automáticamente cuando se alcanzan condiciones que puedan comprometer la estabilidad del sistema.
+Para abordar estas limitaciones, el proyecto incorpora una arquitectura que combina:
+
+- recuperación local del conocimiento;
+- inferencia desacoplada;
+- observabilidad del pipeline;
+- supervisión térmica independiente.
+
+De esta forma es posible experimentar con distintas estrategias de inferencia manteniendo el control sobre los datos, la arquitectura y los recursos del equipo.
 
 ---
 
 # 3. Objetivo general
 
-Diseñar e implementar una arquitectura experimental para ejecutar aplicaciones RAG locales mediante modelos LLM ejecutados en el equipo, incorporando mecanismos de supervisión térmica y protección automática para garantizar una operación segura en hardware limitado.
+Diseñar e implementar una arquitectura RAG híbrida, modular y desacoplada que mantenga la recuperación del conocimiento de forma local, permita utilizar distintos proveedores de inferencia y proporcione mecanismos de observabilidad y supervisión térmica para favorecer una operación estable sobre hardware con recursos limitados.
 
 ---
 
 # 4. Objetivos específicos
 
-## Inteligencia artificial local
+## Recuperación del conocimiento
 
-* Ejecutar modelos de lenguaje localmente mediante Ollama.
-* Integrar modelos de embeddings para representación semántica de documentos.
-* Construir un flujo RAG completo para consulta sobre información propia.
+- Procesar documentación técnica local.
+- Generar embeddings para representar semánticamente la información.
+- Recuperar contexto relevante mediante búsqueda semántica.
+- Mantener local la base de conocimiento utilizada por el sistema.
 
-## Gestión documental
+---
 
-* Procesar documentos locales.
-* Generar una base de conocimiento mediante embeddings.
-* Recuperar información relevante para complementar las respuestas del modelo.
+## Inferencia
+
+- Desacoplar la generación de respuestas del resto del pipeline.
+- Permitir la utilización de distintos backends de inferencia.
+- Facilitar la incorporación de nuevos proveedores sin modificar la arquitectura principal.
+
+---
+
+## Observabilidad
+
+- Registrar cada consulta como una sesión independiente.
+- Medir automáticamente el tiempo de las principales etapas del pipeline.
+- Facilitar el análisis del rendimiento del sistema mediante métricas objetivas.
+
+---
 
 ## Supervisión del sistema
 
-* Obtener información térmica del hardware.
-* Implementar un servicio intermedio para la lectura de sensores.
-* Supervisar la temperatura durante la ejecución de procesos intensivos.
-
-## Protección automática
-
-* Detectar condiciones térmicas críticas.
-* Registrar eventos de protección.
-* Detener procesos RAG cuando sea necesario.
-* Permitir la recuperación del sistema después de normalizarse las condiciones térmicas.
+- Obtener información térmica del hardware.
+- Supervisar continuamente la temperatura del procesador.
+- Detectar condiciones térmicas críticas.
+- Registrar eventos relevantes del sistema.
+- Proteger la ejecución del pipeline cuando sea necesario.
 
 ---
 
 # 5. Arquitectura conceptual
 
-El proyecto está compuesto por dos entornos principales:
+La solución se organiza en dos entornos principales con responsabilidades claramente diferenciadas.
+
+---
 
 ## Windows
 
-Responsable de la interacción con el hardware físico.
+Responsable del acceso al hardware físico.
 
-Componentes:
+Componentes principales:
 
-* LibreHardwareMonitor.
-* Servicio de exportación térmica mediante Flask.
-* Herramientas auxiliares de monitoreo.
+- LibreHardwareMonitor.
+- export_temp_server.py.
+- Herramientas auxiliares de monitoreo.
 
-Responsabilidad:
+Responsabilidades:
 
-Obtener información real de los sensores del equipo y publicarla para otros componentes del sistema.
+- obtener información de los sensores del sistema;
+- publicar dicha información mediante un servicio HTTP;
+- proporcionar los datos necesarios para la supervisión térmica.
 
 ---
 
 ## WSL2 Ubuntu
 
-Responsable de la ejecución de inteligencia artificial.
+Responsable de la ejecución del sistema RAG.
 
-Componentes:
+Componentes principales:
 
-* Ollama.
-* Modelos LLM locales.
-* Scripts Python del pipeline RAG.
-* Thermal Watchdog.
+- Pipeline RAG.
+- Ollama.
+- llm_backend.py.
+- logger.py.
+- thermal_watchdog.py.
 
-Responsabilidad:
+Responsabilidades:
 
-Ejecutar los procesos de inteligencia artificial y aplicar mecanismos de protección cuando las condiciones del sistema lo requieran.
+- procesamiento documental;
+- generación de embeddings;
+- recuperación semántica;
+- construcción del contexto;
+- inferencia mediante el backend seleccionado;
+- registro de métricas;
+- supervisión de la ejecución.
 
 ---
 
 # 6. Arquitectura de alto nivel
 
 ```text
-                         DOCUMENTOS
-                              |
-                              v
-                     Generación de embeddings
-                              |
-                              v
-                       Base documental local
-                              |
-                              v
+                     DOCUMENTACIÓN
 
-Usuario ---> Consulta RAG ---> Recuperación ---> Contexto
-                                                  |
-                                                  v
-                                             Ollama LLM
-                                                  |
-                                                  v
-                                             Respuesta
+                           │
+                           ▼
+
+                Generación de embeddings
+
+                           │
+                           ▼
+
+                 Base documental local
+
+                           │
+                           ▼
+
+                       Consulta usuario
+
+                           │
+                           ▼
+
+                       Recuperación RAG
+
+                           │
+                           ▼
+
+                Construcción del contexto
+
+                           │
+                           ▼
+
+                     llm_backend.py
+
+                ┌──────────┴──────────┐
+                │                     │
+                ▼                     ▼
+
+             Ollama             OpenRouter
+
+                │                     │
+                └──────────┬──────────┘
+                           ▼
+
+                     Respuesta LLM
 
 
-                 SUPERVISIÓN DEL SISTEMA
 
-LibreHardwareMonitor
-          |
-          v
-export_temp_server.py
-          |
-          v
-thermal_watchdog.py
-          |
-          v
-Protección de procesos RAG
+              SUPERVISIÓN DEL SISTEMA
+
+        LibreHardwareMonitor
+                 │
+                 ▼
+        export_temp_server.py
+                 │
+                 ▼
+        thermal_watchdog.py
+                 │
+                 ▼
+     Protección preventiva del pipeline
 ```
 
 ---
 
 # 7. Filosofía del proyecto
 
-El proyecto busca demostrar que la ejecución local de modelos de inteligencia artificial puede realizarse incluso en equipos con recursos limitados mediante una arquitectura organizada que considere:
+El proyecto evoluciona mediante cambios pequeños y controlados.
 
-* uso eficiente de recursos,
-* observabilidad del sistema,
-* separación de responsabilidades,
-* protección automática,
-* control sobre los datos.
+Cada modificación busca mantener una arquitectura coherente y fácilmente mantenible antes que incorporar nuevas funcionalidades de forma acelerada.
 
-Más que una aplicación puntual, representa una experiencia práctica de integración entre inteligencia artificial local, administración de sistemas y automatización.
+Los principios que orientan el desarrollo son:
+
+- separación de responsabilidades;
+- bajo acoplamiento entre componentes;
+- alta cohesión funcional;
+- observabilidad del sistema;
+- documentación técnica extensa;
+- evolución incremental de la arquitectura.
+
+Más que una aplicación concreta, el proyecto constituye una plataforma experimental para estudiar la integración entre inteligencia artificial, arquitectura de software y administración de sistemas.
 
 ---
 
 # 8. Tecnologías principales
 
-| Área                       | Tecnología           |
-| -------------------------- | -------------------- |
-| Sistema operativo IA       | WSL2 Ubuntu          |
-| Sistema operativo hardware | Windows              |
-| Modelo LLM                 | Ollama + llama3.2:3b |
-| Embeddings                 | nomic-embed-text     |
-| Lenguaje principal         | Python               |
-| API de supervisión         | Flask                |
-| Monitoreo hardware         | LibreHardwareMonitor |
-| Arquitectura IA            | RAG                  |
-| Control de versiones       | Git / GitHub         |
+| Área | Tecnología |
+|------|------------|
+| Lenguaje principal | Python |
+| Sistema anfitrión | Windows |
+| Entorno de ejecución IA | WSL2 Ubuntu |
+| Recuperación RAG | Base documental local |
+| Modelo de embeddings | nomic-embed-text |
+| Inferencia local | Ollama |
+| Inferencia cloud | OpenRouter |
+| Supervisión hardware | LibreHardwareMonitor |
+| Servicio de monitoreo | Flask |
+| Control de versiones | Git / GitHub |
 
 ---
 
 # 9. Estado actual del proyecto
 
-Actualmente se cuenta con:
+Al 24 de julio de 2026 la arquitectura dispone de:
 
-* Pipeline RAG funcional.
-* Generación de embeddings documentales.
-* Consultas mediante modelo local Ollama.
-* Servicio de monitoreo térmico Windows.
-* Watchdog térmico ejecutándose en WSL.
-* Registro de eventos críticos.
-* Protección automática del proceso RAG ante sobretemperatura.
+- pipeline RAG modular;
+- recuperación local del conocimiento;
+- generación local de embeddings;
+- backend de inferencia desacoplado;
+- soporte para inferencia local y cloud;
+- registro automático de métricas por consulta;
+- supervisión térmica independiente;
+- documentación técnica organizada por componentes.
 
-Las próximas etapas contemplan:
+La arquitectura continúa evolucionando mediante mejoras incrementales, manteniendo como prioridad la estabilidad del diseño y la coherencia entre el código y su documentación.
 
-* consolidación de documentación técnica,
-* pruebas finales,
-* organización del repositorio,
-* publicación del proyecto.

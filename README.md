@@ -1,153 +1,95 @@
-# Arquitectura RAG Local con Supervisión Térmica
+# Arquitectura RAG Híbrida con Supervisión Térmica
 
-## Descripción
-
-Este proyecto implementa una arquitectura experimental para ejecutar modelos de lenguaje locales (**LLM**) mediante **RAG (Retrieval Augmented Generation)**, incorporando mecanismos de supervisión térmica y protección automática para operar de forma segura en hardware con recursos limitados.
-
-La propuesta integra:
-
-* procesamiento documental local,
-* generación de embeddings,
-* recuperación semántica de información,
-* modelos LLM ejecutados localmente mediante Ollama,
-* monitoreo del hardware,
-* protección automática ante condiciones térmicas críticas.
-
-El objetivo principal es explorar cómo construir una solución de inteligencia artificial local manteniendo control sobre los datos, los modelos y los recursos del equipo.
+> Arquitectura experimental para la construcción de asistentes técnicos basados en **Retrieval-Augmented Generation (RAG)**, con recuperación local del conocimiento, inferencia desacoplada y supervisión térmica del hardware.
 
 ---
 
-# Características principales
+# Descripción
 
-## Inteligencia artificial local
+**Arquitectura_RAG_Termica** es un proyecto experimental cuyo objetivo es diseñar e implementar una arquitectura RAG modular, desacoplada y documentada que sirva como base para asistentes técnicos especializados.
 
-* Ejecución de modelos LLM sin depender de servicios externos.
-* Generación de embeddings mediante modelos locales.
-* Consultas sobre una base documental propia.
-* Recuperación semántica de información relevante.
+El proyecto explora la integración de distintas disciplinas:
 
----
+- Inteligencia Artificial aplicada mediante modelos de lenguaje (LLM).
+- Recuperación semántica de información (RAG).
+- Arquitectura de software orientada al desacoplamiento de componentes.
+- Observabilidad del pipeline mediante registro de métricas.
+- Supervisión térmica para la protección del hardware durante la ejecución de cargas intensivas.
 
-## Arquitectura RAG
-
-El flujo principal es:
-
-```text
-Documentos
-    |
-    v
-Procesamiento e ingestión
-    |
-    v
-Generación de embeddings
-    |
-    v
-Base vectorial local
-    |
-    v
-Consulta usuario
-    |
-    v
-Recuperación de contexto
-    |
-    v
-Modelo LLM local
-    |
-    v
-Respuesta
-```
+Aunque inicialmente fue concebido para ejecutar modelos locales mediante Ollama, la arquitectura ha evolucionado hacia un enfoque híbrido en el que la recuperación del conocimiento permanece local mientras la inferencia puede realizarse utilizando distintos proveedores sin modificar el núcleo del sistema.
 
 ---
 
-## Supervisión térmica
+# Objetivos del proyecto
 
-Debido a las limitaciones del hardware utilizado, se incorporó una capa de protección:
+Los principales objetivos son:
 
-```text
-LibreHardwareMonitor
-        |
-        v
-export_temp_server.py
-        |
-        v
-thermal_watchdog.py
-        |
-        v
-Protección de procesos RAG
-```
+- Construir una arquitectura RAG limpia y modular.
+- Mantener desacopladas las fases de recuperación e inferencia.
+- Facilitar la incorporación de nuevos proveedores de modelos de lenguaje.
+- Registrar métricas de rendimiento de cada consulta.
+- Supervisar el comportamiento térmico del hardware durante la ejecución.
+- Documentar la arquitectura para facilitar su mantenimiento y evolución.
 
-Funciones:
+El proyecto prioriza la estabilidad arquitectónica sobre la incorporación rápida de nuevas funcionalidades.
 
-* lectura de temperatura del CPU,
-* monitoreo continuo,
-* promedio móvil,
-* detección de condiciones críticas,
-* registro de eventos,
-* detención preventiva de procesos.
+---
+
+# Principios de diseño
+
+La arquitectura se desarrolla siguiendo varios principios:
+
+- Bajo acoplamiento entre componentes.
+- Alta cohesión funcional.
+- Responsabilidades claramente definidas.
+- Evolución mediante pequeños cambios controlados.
+- Documentación técnica extensa.
+- Facilidad de mantenimiento.
+
+Antes de introducir modificaciones importantes se analiza su impacto sobre la arquitectura general.
 
 ---
 
 # Arquitectura general
 
-El sistema utiliza una arquitectura híbrida:
+Actualmente el sistema se distribuye entre dos entornos de ejecución.
 
 ```text
-                 EQUIPO FÍSICO
+                    EQUIPO FÍSICO
 
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
+          +--------------------------------------+
+          |                                      |
+          |                                      |
+          ▼                                      ▼
 
+     Windows                               WSL2 Ubuntu
 
-      WINDOWS                  WSL2 UBUNTU
+LibreHardwareMonitor                    Pipeline RAG
+export_temp_server.py                   query.py
+                                        llm_backend.py
+                                        logger.py
+                                        Ollama
 
-LibreHardwareMonitor              Ollama
-          |                       |
-          v                       v
-
-export_temp_server.py        Modelos LLM
-          |
-          |
-      HTTP JSON
-          |
-          v
+          │
+          │ HTTP (JSON)
+          ▼
 
 thermal_watchdog.py
-
-          |
-          v
-
-      query.py
-
-          |
-          v
-
-       RAG LOCAL
 ```
 
----
-
-# Entornos utilizados
+Cada entorno asume responsabilidades diferentes.
 
 ## Windows
 
 Responsabilidades:
 
-* acceso al hardware,
-* lectura de sensores,
-* publicación de temperatura.
+- Acceso a los sensores del hardware.
+- Publicación de la temperatura mediante un servicio HTTP.
 
-Componentes:
+Componentes principales:
 
-* LibreHardwareMonitor.
-* export_temp_server.py.
-
-Ubicación:
-
-```text
-E:\Developer\Tools\LibreHardwareMonitor\python
-```
+- LibreHardwareMonitor
+- export_temp_server.py
 
 ---
 
@@ -155,127 +97,226 @@ E:\Developer\Tools\LibreHardwareMonitor\python
 
 Responsabilidades:
 
-* ejecución de inteligencia artificial,
-* procesamiento RAG,
-* supervisión térmica.
-
-Componentes:
-
-* Ollama.
-* Scripts Python.
-* Thermal Watchdog.
-
-Ubicación:
-
-```text
-/home/manuelc/rag_maui_docs_for_rag/scripts
-```
+- Procesamiento documental.
+- Recuperación RAG.
+- Generación de embeddings.
+- Ejecución del pipeline.
+- Supervisión térmica.
+- Inferencia mediante el backend seleccionado.
 
 ---
 
-# Tecnologías principales
+# Pipeline RAG
 
-| Área                | Tecnología           |
-| ------------------- | -------------------- |
-| Sistema IA          | WSL2 Ubuntu          |
-| Sistema hardware    | Windows              |
-| LLM                 | Ollama               |
-| Modelo principal    | llama3.2:3b          |
-| Modelo código       | qwen2.5-coder:1.5b   |
-| Embeddings          | nomic-embed-text     |
-| Lenguaje            | Python               |
-| API monitoreo       | Flask                |
-| Hardware monitoring | LibreHardwareMonitor |
-| Arquitectura IA     | RAG                  |
+El flujo general de una consulta es el siguiente:
+
+```text
+Usuario
+    │
+    ▼
+Recepción de la consulta
+    │
+    ▼
+Generación del embedding
+(nomic-embed-text)
+    │
+    ▼
+Búsqueda semántica
+(embeddings.jsonl)
+    │
+    ▼
+Recuperación de contexto
+(symbols.jsonl)
+    │
+    ▼
+Construcción del prompt
+    │
+    ▼
+llm_backend.py
+    │
+    ├────────► Ollama
+    │
+    └────────► OpenRouter
+                 │
+                 ▼
+             Respuesta
+```
+
+Cada consulta constituye una sesión independiente de ejecución.
+
+---
+
+# Separación entre recuperación e inferencia
+
+Una de las decisiones arquitectónicas más importantes del proyecto consiste en separar completamente la recuperación del conocimiento de la generación de respuestas.
+
+Actualmente:
+
+- La recuperación RAG se ejecuta íntegramente de forma local.
+- Los embeddings se generan mediante `nomic-embed-text`.
+- La búsqueda semántica utiliza `embeddings.jsonl`.
+- El contexto arquitectónico utiliza `symbols.jsonl`.
+- La inferencia se delega completamente a `llm_backend.py`.
+
+Gracias a esta separación, `query.py` no necesita conocer cómo se comunica cada proveedor de inferencia.
+
+Actualmente existen dos backends implementados:
+
+- LOCAL (Ollama)
+- CLOUD (OpenRouter)
+
+La incorporación de nuevos proveedores puede realizarse ampliando `llm_backend.py` sin modificar el resto del pipeline.
+
+---
+
+# Supervisión térmica
+
+El proyecto incorpora un sistema independiente de supervisión térmica destinado a proteger el hardware durante la ejecución de procesos intensivos.
+
+Su funcionamiento permanece completamente desacoplado del pipeline RAG.
+
+```text
+LibreHardwareMonitor
+        │
+        ▼
+export_temp_server.py
+        │
+        ▼
+thermal_watchdog.py
+        │
+        ▼
+Supervisión del CPU
+        │
+        ▼
+Protección preventiva
+```
+
+El watchdog realiza, entre otras tareas:
+
+- lectura periódica de la temperatura;
+- cálculo de promedio móvil;
+- detección de umbrales configurados;
+- registro de eventos;
+- interrupción preventiva de procesos cuando se alcanzan condiciones críticas.
+
+---
+
+# Observabilidad del sistema
+
+Cada consulta genera automáticamente un nuevo registro de ejecución.
+
+El módulo `logger.py` registra cronológicamente los eventos del pipeline y calcula métricas de rendimiento como:
+
+- EMBEDDING_TIME
+- SEARCH_TIME
+- LLM_TIME
+- PIPELINE_TIME
+
+Estas métricas permiten analizar el comportamiento del sistema sin modificar la lógica funcional del pipeline.
 
 ---
 
 # Componentes principales
 
-| Componente            | Función                             |
-| --------------------- | ----------------------------------- |
-| ingest.py             | Lectura y estructuración documental |
-| embed.py              | Generación de embeddings            |
-| query.py              | Motor de consulta RAG               |
-| logger.py             | Registro de ejecución y diagnóstico |
-| thermal_watchdog.py   | Supervisión térmica                 |
-| export_temp_server.py | API térmica Windows                 |
+| Componente | Responsabilidad |
+|------------|-----------------|
+| `query.py` | Coordinador principal del pipeline RAG. |
+| `llm_backend.py` | Abstracción del backend de inferencia. |
+| `logger.py` | Registro de eventos y métricas del pipeline. |
+| `embed.py` | Generación de embeddings. |
+| `ingest.py` | Procesamiento e ingestión documental. |
+| `chunk.py` | Fragmentación de documentos. |
+| `symbol_extractor.py` | Construcción del contexto arquitectónico. |
+| `thermal_watchdog.py` | Supervisión térmica del sistema. |
+| `monitor_temperatura.py` | Herramientas de monitoreo térmico. |
+| `test_env.py` | Validación del entorno de ejecución. |
+
+---
+
+# Organización del repositorio
+
+```text
+Arquitectura_RAG_Termica
+│
+├── README.md
+├── LICENSE
+├── ESTRUCTURA_DEL_PROYECTO.md
+└── docs/
+```
+
+La organización completa del repositorio se describe en `ESTRUCTURA_DEL_PROYECTO.md`.
+
+La documentación técnica detallada se encuentra en el directorio `docs/`.
+
+---
+
+# Tecnologías utilizadas
+
+| Área | Tecnología |
+|------|------------|
+| Lenguaje principal | Python |
+| Sistema operativo IA | WSL2 Ubuntu |
+| Sistema anfitrión | Windows |
+| Recuperación RAG | Embeddings locales |
+| Modelo de embeddings | nomic-embed-text |
+| Inferencia local | Ollama |
+| Inferencia cloud | OpenRouter |
+| Monitoreo hardware | LibreHardwareMonitor |
+| API de monitoreo | Flask |
+
+---
+
+# Estado actual del proyecto
+
+Al 24 de julio de 2026 el proyecto dispone de:
+
+- Arquitectura modular desacoplada.
+- Recuperación RAG completamente local.
+- Backend de inferencia desacoplado.
+- Soporte para inferencia local y cloud.
+- Registro automático de métricas.
+- Supervisión térmica independiente.
+- Documentación técnica organizada por componentes.
+
+La evolución del proyecto continúa mediante mejoras incrementales sobre esta arquitectura.
 
 ---
 
 # Documentación
 
-La documentación completa se encuentra en:
+El proyecto incluye documentación técnica organizada en varios documentos.
 
-```text
-docs/
-```
-
-Documentos disponibles:
-
-| Documento                                                                             | Descripción                      |
-| ------------------------------------------------------------------------------------- | -------------------------------- |
-| [01_vision_general.md](docs/01_vision_general.md)                                     | Objetivo y contexto del proyecto |
-| [02_arquitectura_del_sistema.md](docs/02_arquitectura_del_sistema.md)                 | Diseño general de la solución    |
-| [03_pipeline_RAG.md](docs/03_pipeline_RAG.md)                                         | Flujo de procesamiento RAG       |
-| [04_ollama_y_entorno.md](docs/04_ollama_y_entorno.md)                                 | Modelos y entorno local          |
-| [05_supervision_y_proteccion_termica.md](docs/05_supervision_y_proteccion_termica.md) | Protección térmica               |
-| [06_pruebas_y_validacion.md](docs/06_pruebas_y_validacion.md)                         | Pruebas realizadas               |
-| [07_mantenimiento_y_evolucion.md](docs/07_mantenimiento_y_evolucion.md)               | Mantenimiento y mejoras futuras  |
+| Documento | Contenido |
+|-----------|-----------|
+| `01_vision_general.md` | Visión y objetivos del proyecto. |
+| `02_arquitectura_del_sistema.md` | Arquitectura general. |
+| `03_pipeline_RAG.md` | Flujo del pipeline RAG. |
+| `04_ollama_y_entorno.md` | Entorno de inferencia y configuración. |
+| `05_supervision_y_proteccion_termica.md` | Supervisión térmica. |
+| `06_pruebas_y_validacion.md` | Pruebas realizadas. |
+| `07_mantenimiento_y_evolucion.md` | Evolución prevista. |
 
 ---
 
-# Estado actual
+# Evolución prevista
 
-Actualmente el sistema permite:
+La arquitectura ha sido diseñada para facilitar su crecimiento progresivo.
 
-✅ Ejecutar modelos LLM localmente.
-✅ Consultar información documental mediante RAG.
-✅ Generar embeddings locales.
-✅ Supervisar temperatura del CPU.
-✅ Registrar eventos térmicos.
-✅ Proteger procesos ante sobretemperatura.
+Entre las posibles líneas de evolución se encuentran:
 
----
+- incorporación de nuevos proveedores de inferencia;
+- mejora de las métricas de observabilidad;
+- ampliación del sistema de supervisión;
+- optimización del pipeline RAG;
+- especialización para asistentes técnicos de desarrollo.
 
-# Motivación
-
-Este proyecto nace como una experiencia práctica de integración entre:
-
-* inteligencia artificial local,
-* administración de sistemas,
-* automatización,
-* monitoreo de hardware.
-
-El objetivo no es únicamente obtener respuestas mediante IA, sino construir una arquitectura controlada, observable y adaptable para escenarios donde los recursos computacionales son limitados.
-
----
-
-# Posibles evoluciones
-
-Entre las mejoras futuras consideradas:
-
-* supervisión avanzada de CPU y memoria,
-* selección dinámica de modelos,
-* panel de monitoreo,
-* métricas de rendimiento,
-* automatización del ciclo completo RAG.
+Estas líneas representan objetivos de evolución y no funcionalidades implementadas actualmente.
 
 ---
 
 # Licencia
 
-Este proyecto se distribuye bajo licencia MIT.
+Este proyecto se distribuye bajo la licencia MIT.
 
-El código desarrollado en este repositorio está disponible para uso,
-modificación y distribución conforme a los términos de dicha licencia.
-
-Los modelos de inteligencia artificial, herramientas externas y librerías
-utilizadas mantienen sus propias licencias:
-- Ollama
-- llama3.2:3b
-- qwen2.5-coder
-- nomic-embed-text
-- LibreHardwareMonitor
-- dependencias Python
+Las herramientas, modelos de lenguaje y bibliotecas utilizadas mantienen sus respectivas licencias de distribución.
 

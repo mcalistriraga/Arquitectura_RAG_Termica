@@ -1,20 +1,63 @@
+# ============================================================
+# Arquitectura RAG local con supervisión térmica
+# Archivo: .gitignore
+# ============================================================
+
+# ----------------------------
 # Python
+# ----------------------------
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
+# Entornos virtuales
+venv/
+venv_rag/
+.venv/
+
+# ----------------------------
 # Logs
+# ----------------------------
 *.log
 *.tmp
 
-# RAG generated artifacts
+# ----------------------------
+# Archivos generados por el RAG
+# (descomentar si no se desean versionar)
+# ----------------------------
 # embeddings.jsonl
+# query_log.txt
+# thermal_watchdog_log.txt
 
+# ----------------------------
 # VSCode
+# ----------------------------
 .vscode/
 
+# ----------------------------
 # Windows
+# ----------------------------
 Thumbs.db
 Desktop.ini
 
-# Linux
+# Alternate Data Streams (ADS)
+*:Zone.Identifier
+
+# ----------------------------
+# macOS
+# ----------------------------
 .DS_Store
+
+# ----------------------------
+# Archivos temporales
+# ----------------------------
+*.bak
+*.old
+*.orig
+*~
+
+# ----------------------------
+# OpenRouter
+# ----------------------------
+*.env

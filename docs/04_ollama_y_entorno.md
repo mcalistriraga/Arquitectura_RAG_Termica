@@ -1,53 +1,69 @@
-# Ollama y Entorno de Ejecución Local
+# Entorno de Ejecución y Backends de Inferencia
 
 ## 1. Introducción
 
-El proyecto utiliza un entorno de inteligencia artificial completamente local basado en **WSL2 Ubuntu + Ollama**, permitiendo ejecutar modelos de lenguaje y modelos de embeddings directamente en el equipo.
+El proyecto utiliza un entorno de ejecución basado en **WSL2 Ubuntu**, donde se ejecutan los componentes principales del pipeline RAG y los modelos de inteligencia artificial.
 
-Esta arquitectura evita depender de servicios externos y mantiene:
+La arquitectura ha sido diseñada para separar el procesamiento documental de la generación de respuestas mediante una capa de abstracción (`llm_backend.py`), permitiendo utilizar distintos proveedores de inferencia sin modificar el flujo principal de la aplicación.
 
-* control de los datos,
-* privacidad de la información,
-* independencia de conexión,
-* capacidad de experimentación con modelos locales.
+Actualmente el proyecto soporta dos modalidades de inferencia:
 
-El entorno está diseñado para funcionar en hardware limitado, utilizando modelos ligeros y mecanismos de control térmico.
+- **Backend LOCAL**, mediante Ollama.
+- **Backend CLOUD**, mediante OpenRouter.
+
+Esta arquitectura híbrida permite ejecutar completamente el sistema en un entorno local cuando el hardware lo permite o utilizar modelos remotos cuando se requiere mayor capacidad de procesamiento.
 
 ---
 
-# 2. Arquitectura del entorno IA
+# 2. Arquitectura del entorno
 
-El entorno de ejecución está compuesto por:
+El entorno de ejecución está organizado en dos niveles principales: el sistema operativo anfitrión (Windows) y el entorno Linux proporcionado por WSL2.
 
 ```text
-                 WINDOWS
+                    WINDOWS
 
-              Hardware físico
-                    |
-                    |
-                    v
+               Hardware físico
 
-              WSL2 Ubuntu
+                      │
+                      ▼
 
-                    |
-        +-----------+-----------+
-        |                       |
-        v                       v
+                WSL2 Ubuntu
 
-      Python                 Ollama
+                      │
+        ┌─────────────┴─────────────┐
+        ▼                           ▼
 
-        |                       |
-        |                       |
-        v                       v
+     Entorno Python             Ollama
 
-     Pipeline RAG          Modelos IA
+        │
+        ▼
 
-        |
-        |
-        v
+   Pipeline RAG
+
+        │
+        ▼
 
      query.py
+
+        │
+        ▼
+
+   llm_backend.py
+
+        │
+   ┌────┴─────┐
+   ▼          ▼
+
+Ollama   OpenRouter
+
+   │          │
+   └────┬─────┘
+        ▼
+
+ Respuesta final
 ```
+
+El procesamiento documental y la lógica principal del pipeline se ejecutan en WSL2, mientras que la supervisión térmica utiliza servicios auxiliares que se comunican con Windows.
 
 ---
 
@@ -55,50 +71,66 @@ El entorno de ejecución está compuesto por:
 
 ## WSL2 Ubuntu
 
-El entorno Linux utilizado para inteligencia artificial se ejecuta mediante:
+El entorno Linux utilizado por el proyecto se ejecuta mediante:
 
 ```text
-Windows Subsystem for Linux 2
+Windows Subsystem for Linux 2 (WSL2)
 ```
 
-Responsabilidades:
+Dentro de este entorno se ejecutan los componentes principales del sistema.
 
-* ejecución de scripts Python,
-* administración del entorno virtual,
-* ejecución del pipeline RAG,
-* comunicación con Ollama.
+Entre sus responsabilidades se encuentran:
+
+- ejecución de los scripts Python;
+- administración del entorno virtual;
+- ejecución del pipeline RAG;
+- comunicación con Ollama;
+- acceso al backend cloud cuando se encuentra habilitado;
+- gestión de los archivos generados durante la indexación documental.
+
+Esta separación permite mantener el desarrollo de la aplicación en un entorno Linux sin perder acceso al hardware y a las herramientas disponibles en Windows.
 
 ---
 
-# 4. Ubicación del proyecto
+# 4. Estructura del entorno
 
-El entorno principal del RAG se encuentra en:
+El proyecto se organiza en un directorio principal que contiene el código fuente, los archivos generados durante la indexación y el entorno virtual de Python.
+
+En las pruebas realizadas se ha utilizado, entre otros, el directorio:
 
 ```text
 /home/manuelc/rag_maui_docs_for_rag
 ```
 
-Estructura principal:
+Una estructura simplificada es la siguiente:
 
 ```text
 rag_maui_docs_for_rag
 
-├── scripts
+├── scripts/
+│
+├── chunks/
+│
+├── docs/
 │
 ├── embeddings.jsonl
 │
 ├── symbols.jsonl
 │
-├── documentos
+├── output_raw.jsonl
 │
-└── venv_rag
+└── venv_rag/
 ```
+
+La estructura puede evolucionar conforme se incorporen nuevos componentes al proyecto.
 
 ---
 
 # 5. Entorno Python
 
-El proyecto utiliza un entorno virtual independiente:
+El proyecto utiliza un entorno virtual independiente para aislar las dependencias del sistema.
+
+Nombre del entorno:
 
 ```text
 venv_rag
@@ -112,48 +144,90 @@ source venv_rag/bin/activate
 
 ---
 
-## Versión utilizada
+## Versión de Python
 
-Python:
+La implementación actual utiliza Python 3.12.x.
+
+La versión exacta puede variar según el entorno de desarrollo, manteniéndose dentro de la serie 3.12.
+
+---
+
+## Bibliotecas utilizadas
+
+Entre las dependencias empleadas por los componentes principales del proyecto se encuentran:
+
+| Biblioteca | Propósito |
+|-------------|-----------|
+| requests | Comunicación HTTP con Ollama, OpenRouter y servicios auxiliares. |
+| numpy | Operaciones sobre vectores y cálculo de similitud. |
+| json | Lectura y escritura de archivos JSON y JSONL. |
+| re | Procesamiento mediante expresiones regulares. |
+| time | Control de tiempos y temporización de procesos. |
+| os | Acceso a archivos y variables del sistema. |
+| subprocess | Ejecución de procesos externos. |
+| collections | Estructuras auxiliares utilizadas por el watchdog térmico. |
+
+Dependiendo del componente ejecutado, pueden utilizarse bibliotecas adicionales.
+
+---
+
+# 6. Capa de abstracción del backend
+
+## llm_backend.py
+
+La comunicación con los modelos de lenguaje se encuentra centralizada en `llm_backend.py`.
+
+Este componente actúa como una capa de abstracción entre el pipeline RAG y los distintos proveedores de inferencia disponibles.
+
+Entre sus responsabilidades se encuentran:
+
+- seleccionar el backend configurado;
+- preparar la solicitud correspondiente;
+- enviar la consulta al proveedor de inferencia;
+- recibir la respuesta generada por el modelo;
+- devolver un formato uniforme al resto del sistema.
+
+Gracias a esta arquitectura, `query.py` permanece desacoplado de la implementación específica de cada backend.
 
 ```text
-Python 3.12.x
+query.py
+
+     │
+     ▼
+
+llm_backend.py
+
+     │
+ ┌───┴──────────┐
+ ▼              ▼
+
+LOCAL        CLOUD
+
+(Ollama)   (OpenRouter)
 ```
 
----
-
-## Librerías principales
-
-El entorno incluye:
-
-| Librería | Uso |
-|-|-|
-| requests | comunicación HTTP con Ollama y servicios externos |
-| numpy | cálculo de similitud vectorial |
-| json | manejo de archivos JSONL |
-| re | detección de patrones y errores |
-| time | control de tiempos y retardos |
+Esta organización facilita la incorporación futura de nuevos proveedores sin modificar el flujo principal del pipeline.
 
 ---
 
-# 6. Ollama
+# 7. Backend LOCAL
 
-## Descripción
+## Ollama
 
-Ollama funciona como servidor local de modelos de inteligencia artificial.
+El backend local utiliza Ollama como servidor de modelos de inteligencia artificial.
 
-Responsabilidades:
+Entre sus funciones principales se encuentran:
 
-* cargar modelos LLM,
-* ejecutar inferencias,
-* generar embeddings,
-* exponer una API HTTP local.
+- cargar modelos LLM instalados localmente;
+- generar embeddings;
+- ejecutar inferencias;
+- exponer una API HTTP accesible desde los scripts Python.
 
 ---
 
-## Servicio Ollama
+## Servicio
 
-Endpoint principal:
+El servicio de Ollama se encuentra disponible, por defecto, mediante:
 
 ```text
 http://localhost:11434
@@ -169,13 +243,7 @@ http://localhost:11434
 POST /api/generate
 ```
 
-Utilizada por:
-
-```text
-query.py
-```
-
-para enviar preguntas al modelo LLM.
+Utilizada por `llm_backend.py` cuando el backend seleccionado es LOCAL.
 
 ---
 
@@ -187,121 +255,122 @@ POST /api/embeddings
 
 Utilizada por:
 
-```text
-embed.py
-query.py
-```
+- `embed.py`;
+- `query.py`;
 
-para crear representaciones vectoriales.
+para generar las representaciones vectoriales empleadas durante la recuperación semántica.
 
 ---
 
-# 7. Modelos instalados
+## Modelos locales utilizados
 
-La arquitectura utiliza modelos especializados según la tarea.
+Actualmente la configuración contempla los siguientes modelos:
 
----
+| Función | Modelo |
+|----------|--------|
+| Embeddings | `nomic-embed-text` |
+| Depuración | `qwen2.5-coder:1.5b` |
+| Arquitectura | `llama3.2:3b` |
+| Documentación | `llama3.2:3b` |
 
-## nomic-embed-text
+La selección del modelo depende del modo de operación elegido por el usuario y de la configuración del backend.
 
-Uso:
+# 8. Backend CLOUD
 
-```text
-Generación de embeddings
-```
+## OpenRouter
 
-Responsabilidad:
+El backend cloud permite delegar la generación de respuestas a modelos de lenguaje disponibles a través de OpenRouter.
 
-Transformar documentos y consultas en vectores semánticos.
+Su utilización resulta especialmente útil cuando el hardware local no dispone de la capacidad suficiente para ejecutar modelos de mayor tamaño o cuando se desea evaluar distintos modelos remotos manteniendo el mismo pipeline RAG.
 
-Utilizado por:
-
-```text
-embed.py
-query.py
-```
+La comunicación con OpenRouter se realiza exclusivamente mediante `llm_backend.py`, manteniendo desacoplado el resto de la aplicación.
 
 ---
 
-## qwen2.5-coder:1.5b
+## Autenticación
 
-Uso:
+El acceso al servicio requiere una clave de API (API Key), que se carga desde el entorno de ejecución.
 
-```text
-Modo DEPURACIÓN
-```
-
-Orientado a:
-
-* análisis de código,
-* errores C#,
-* problemas MAUI,
-* propuestas de corrección.
+La gestión de las credenciales se mantiene separada del código fuente, evitando su incorporación al repositorio.
 
 ---
 
-## llama3.2:3b
+## Modelos remotos
 
-Uso:
+El backend cloud permite utilizar diferentes modelos compatibles con OpenRouter.
 
-```text
-Modo ARQUITECTURA
-Modo DOCUMENTACIÓN
-```
-
-Orientado a:
-
-* análisis conceptual,
-* explicación de sistemas,
-* generación documental.
+La selección del modelo depende de la configuración activa en la sesión y puede modificarse sin alterar el funcionamiento del pipeline RAG.
 
 ---
 
-# 8. Comunicación con Ollama
+# 9. Comunicación con los backends
 
-El flujo de una consulta es:
+El flujo general de una consulta es independiente del proveedor de inferencia.
 
 ```text
 query.py
 
-    |
-    |
-    v
+     │
+     ▼
 
-API Ollama
+Preparación de la consulta
 
-    |
-    |
-    v
+     │
+     ▼
 
-Modelo seleccionado
+llm_backend.py
 
-    |
-    |
-    v
+     │
+ ┌───┴──────────┐
+ ▼              ▼
 
-Respuesta generada
+LOCAL        CLOUD
+
+Ollama     OpenRouter
+
+     │
+     ▼
+
+Respuesta del modelo
+
+     │
+     ▼
+
+query.py
+
+     │
+     ▼
+
+Usuario
 ```
+
+Esta arquitectura permite cambiar de backend sin modificar la lógica principal de `query.py`.
 
 ---
 
-# 9. Ejecución del entorno
+# 10. Ejecución del entorno
+
+## Activar el entorno virtual
+
+```bash
+source venv_rag/bin/activate
+```
+
+---
 
 ## Verificar Ollama
 
-Ejemplo:
+Cuando se utilice el backend LOCAL, es posible comprobar los modelos instalados mediante:
 
 ```bash
 ollama list
 ```
 
-Debe mostrar los modelos disponibles.
-
 ---
 
-## Ejecutar Ollama
+## Iniciar el servicio Ollama
 
-El servicio debe estar activo:
+Si el servicio no se encuentra en ejecución:
 
 ```bash
 ollama serve
@@ -309,104 +378,127 @@ ollama serve
 
 ---
 
-## Ejecutar consulta RAG
+## Ejecutar una consulta
 
-Dentro del entorno virtual:
+Con el entorno preparado:
 
 ```bash
 python3 query.py
 ```
 
----
-
-# 10. Consideraciones de hardware
-
-El entorno fue diseñado considerando las limitaciones del equipo utilizado.
-
-Características relevantes:
-
-* ejecución únicamente con CPU,
-* memoria limitada,
-* ausencia de GPU dedicada para IA,
-* necesidad de controlar temperatura durante cargas prolongadas.
-
-Por esta razón:
-
-* se utilizan modelos pequeños,
-* se controla la carga durante generación de embeddings,
-* se incorpora supervisión térmica externa.
+Durante el inicio de la aplicación, el usuario puede seleccionar el modo de operación y el backend configurado para la sesión.
 
 ---
 
-# 11. Integración con la arquitectura térmica
+# 11. Consideraciones de hardware
 
-Aunque Ollama no controla directamente el hardware, su carga puede aumentar el consumo del procesador.
+El proyecto fue diseñado considerando equipos con recursos limitados, donde la ejecución de modelos LLM puede representar una carga significativa para el procesador.
 
-La relación es:
+Entre las características del entorno utilizado durante el desarrollo se encuentran:
+
+- ejecución principalmente sobre CPU;
+- memoria limitada;
+- ausencia de una GPU dedicada para aceleración de IA;
+- necesidad de controlar la temperatura durante tareas intensivas.
+
+Estas limitaciones motivaron varias decisiones de diseño, entre ellas:
+
+- utilización de modelos relativamente ligeros para la ejecución local;
+- separación entre recuperación documental e inferencia;
+- incorporación de un backend cloud para ejecutar modelos remotos cuando resulte conveniente;
+- implementación de un mecanismo independiente de supervisión térmica.
+
+---
+
+# 12. Integración con la supervisión térmica
+
+La supervisión térmica forma parte de la arquitectura general del proyecto, aunque se ejecuta de manera independiente del pipeline principal.
+
+Su funcionamiento puede resumirse de la siguiente forma:
 
 ```text
-Ollama
+Windows
 
-   |
-   v
+      │
+      ▼
 
-Carga CPU
+export_temp_server.py
 
-   |
-   v
-
-Temperatura
-
-   |
-   v
+      │
+      ▼
 
 thermal_watchdog.py
+
+      │
+      ▼
+
+Monitoreo continuo
+
+      │
+      ▼
+
+Acciones de protección
 ```
 
-El sistema térmico funciona como una capa externa de protección.
+Cuando la temperatura supera los umbrales configurados, el watchdog puede registrar el evento y detener el proceso de consulta para proteger el equipo.
+
+La comunicación entre Windows y WSL2 se realiza mediante un servicio HTTP basado en Flask.
 
 ---
 
-# 12. Estado actual del entorno
+# 13. Estado actual del entorno
 
-Actualmente el entorno permite:
+Actualmente el entorno de ejecución permite:
 
-* ejecutar modelos LLM locales,
-* generar embeddings,
-* realizar consultas RAG,
-* cambiar modelos según necesidad,
-* operar sin conexión externa,
-* integrarse con mecanismos de protección térmica.
+- ejecutar el pipeline RAG sobre WSL2;
+- generar embeddings mediante Ollama;
+- utilizar inferencia local mediante Ollama;
+- utilizar inferencia remota mediante OpenRouter;
+- seleccionar distintos modelos según el modo de operación;
+- registrar la actividad de las consultas;
+- supervisar las condiciones térmicas del equipo mediante procesos desacoplados.
 
----
-
-# 13. Posibles mejoras futuras
-
-La evolución del entorno puede incluir:
-
-* incorporación de GPU NVIDIA,
-* modelos de mayor tamaño,
-* cuantización avanzada,
-* administración automática de modelos,
-* métricas de rendimiento,
-* integración con herramientas de observabilidad.
+La arquitectura mantiene una separación clara entre el procesamiento documental, la inferencia y la supervisión del sistema.
 
 ---
 
-# 14. Resumen
+# 14. Evolución prevista
 
-La combinación:
+Entre las posibles líneas de evolución del entorno se encuentran:
+
+- incorporación de aceleración mediante GPU;
+- soporte para nuevos proveedores de inferencia;
+- gestión automática de modelos locales;
+- optimización del consumo de recursos;
+- incorporación de métricas de rendimiento;
+- integración con herramientas de observabilidad y monitorización.
+
+Estas funcionalidades representan posibles mejoras futuras y no forman parte de la implementación actual.
+
+---
+
+# 15. Resumen
+
+La arquitectura de ejecución del proyecto combina:
 
 ```text
-WSL2
- +
+Windows
+        │
+        ▼
+WSL2 Ubuntu
+        │
+        ▼
 Python
- +
-Ollama
- +
-Modelos locales
- +
+        │
+        ▼
 Pipeline RAG
+        │
+        ▼
+llm_backend.py
+     ┌──┴──┐
+     ▼     ▼
+ Ollama  OpenRouter
 ```
 
-proporciona una plataforma experimental completa para desarrollar soluciones de inteligencia artificial local manteniendo control sobre datos, modelos y recursos del equipo.
+Esta organización proporciona una plataforma experimental para el desarrollo y evaluación de soluciones RAG, permitiendo utilizar tanto recursos locales como servicios de inferencia remotos, manteniendo una arquitectura modular, extensible y coherente con el estado actual del proyecto.
+
