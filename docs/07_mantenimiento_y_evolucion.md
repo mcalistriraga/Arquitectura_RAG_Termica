@@ -317,6 +317,7 @@ Se recomienda evaluar previamente:
 La separación entre `query.py` y `llm_backend.py` facilita la incorporación de nuevos modelos o proveedores de inferencia con un impacto mínimo sobre el resto del sistema.
 
 ---
+
 # 6. Diagnóstico y registros
 
 La arquitectura incorpora mecanismos de registro que facilitan el análisis del comportamiento del sistema y el diagnóstico de incidencias.
@@ -446,7 +447,6 @@ Conviene conservar la configuración relacionada con:
 - scripts auxiliares utilizados durante el desarrollo.
 
 ---
-
 # 8. Evolución prevista
 
 La arquitectura actual fue diseñada para facilitar la incorporación gradual de nuevas capacidades.
@@ -613,4 +613,3 @@ La organización modular del proyecto facilita el mantenimiento y la evolución 
 La separación entre el procesamiento documental, la recuperación semántica, la inferencia mediante modelos de lenguaje y la supervisión térmica permite incorporar mejoras progresivas sin modificar la estructura general del sistema.
 
 En conjunto, la arquitectura proporciona una base sólida para continuar experimentando con soluciones RAG locales e híbridas, manteniendo la coherencia entre la implementación, la documentación técnica y los objetivos de investigación del proyecto.
-

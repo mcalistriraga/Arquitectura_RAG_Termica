@@ -136,8 +136,6 @@ Entre sus responsabilidades se encuentran:
 
 Esta organización permite mantener desacopladas las responsabilidades de recuperación documental e inferencia.
 
----
-
 # 6. Backend LOCAL
 
 El backend LOCAL utiliza Ollama como servidor de inferencia ejecutándose en el entorno WSL2.
@@ -181,6 +179,7 @@ Entre las ventajas del backend CLOUD se encuentran:
 El backend CLOUD recibe exactamente el mismo contexto generado por el pipeline local, garantizando un comportamiento consistente independientemente del proveedor de inferencia seleccionado.
 
 ---
+
 # 8. Gestión de credenciales
 
 Las credenciales necesarias para acceder a proveedores de inferencia remotos no forman parte del código fuente del proyecto.
@@ -269,8 +268,6 @@ Respuesta
 La única etapa que varía entre los distintos modos de operación es la inferencia mediante el modelo de lenguaje.
 
 Todas las etapas anteriores permanecen invariables.
-
----
 
 # 11. Selección del backend
 

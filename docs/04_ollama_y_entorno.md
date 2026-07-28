@@ -4,14 +4,16 @@
 
 El proyecto utiliza un entorno de ejecución basado en **WSL2 Ubuntu**, donde se ejecutan los componentes principales del pipeline RAG y los modelos de inteligencia artificial.
 
-La arquitectura ha sido diseñada para separar el procesamiento documental de la generación de respuestas mediante una capa de abstracción (`llm_backend.py`), permitiendo utilizar distintos proveedores de inferencia sin modificar el flujo principal de la aplicación.
+La arquitectura ha sido diseñada para separar claramente la **recuperación del conocimiento**, la **generación de respuestas**, la **observabilidad** y la **supervisión térmica**, permitiendo que cada componente evolucione de forma independiente.
+
+Actualmente la recuperación documental permanece completamente local, mientras que la inferencia puede realizarse mediante distintos proveedores utilizando una capa de abstracción implementada en `llm_backend.py`.
 
 Actualmente el proyecto soporta dos modalidades de inferencia:
 
 - **Backend LOCAL**, mediante Ollama.
 - **Backend CLOUD**, mediante OpenRouter.
 
-Esta arquitectura híbrida permite ejecutar completamente el sistema en un entorno local cuando el hardware lo permite o utilizar modelos remotos cuando se requiere mayor capacidad de procesamiento.
+Esta arquitectura híbrida permite ejecutar completamente el sistema en un entorno local cuando el hardware lo permite o utilizar modelos remotos cuando se requiere mayor capacidad de procesamiento, sin modificar el flujo principal del pipeline.
 
 ---
 
@@ -38,18 +40,20 @@ El entorno de ejecución está organizado en dos niveles principales: el sistema
         │
         ▼
 
-   Pipeline RAG
+     Pipeline RAG
 
         │
         ▼
 
      query.py
-
+        │
+        ├─────────────── Recuperación local
         │
         ▼
-
-   llm_backend.py
-
+ Construcción del contexto
+        │
+        ▼
+  llm_backend.py
         │
    ┌────┴─────┐
    ▼          ▼
@@ -63,7 +67,9 @@ Ollama   OpenRouter
  Respuesta final
 ```
 
-El procesamiento documental y la lógica principal del pipeline se ejecutan en WSL2, mientras que la supervisión térmica utiliza servicios auxiliares que se comunican con Windows.
+El procesamiento documental, la recuperación semántica y la construcción del contexto se ejecutan íntegramente en WSL2.
+
+La supervisión térmica utiliza servicios auxiliares ejecutados en Windows y se comunica con WSL2 mediante HTTP.
 
 ---
 
@@ -96,7 +102,7 @@ Esta separación permite mantener el desarrollo de la aplicación en un entorno 
 
 El proyecto se organiza en un directorio principal que contiene el código fuente, los archivos generados durante la indexación y el entorno virtual de Python.
 
-En las pruebas realizadas se ha utilizado, entre otros, el directorio:
+Durante el desarrollo se ha utilizado, entre otros, el directorio:
 
 ```text
 /home/manuelc/rag_maui_docs_for_rag
@@ -122,7 +128,7 @@ rag_maui_docs_for_rag
 └── venv_rag/
 ```
 
-La estructura puede evolucionar conforme se incorporen nuevos componentes al proyecto.
+La estructura puede evolucionar conforme se incorporen nuevos componentes al proyecto o nuevas bases de conocimiento.
 
 ---
 
@@ -159,10 +165,10 @@ Entre las dependencias empleadas por los componentes principales del proyecto se
 | Biblioteca | Propósito |
 |-------------|-----------|
 | requests | Comunicación HTTP con Ollama, OpenRouter y servicios auxiliares. |
-| numpy | Operaciones sobre vectores y cálculo de similitud. |
+| numpy | Operaciones sobre vectores y cálculo de similitud coseno. |
 | json | Lectura y escritura de archivos JSON y JSONL. |
 | re | Procesamiento mediante expresiones regulares. |
-| time | Control de tiempos y temporización de procesos. |
+| time | Medición de tiempos y temporización. |
 | os | Acceso a archivos y variables del sistema. |
 | subprocess | Ejecución de procesos externos. |
 | collections | Estructuras auxiliares utilizadas por el watchdog térmico. |
@@ -177,20 +183,25 @@ Dependiendo del componente ejecutado, pueden utilizarse bibliotecas adicionales.
 
 La comunicación con los modelos de lenguaje se encuentra centralizada en `llm_backend.py`.
 
-Este componente actúa como una capa de abstracción entre el pipeline RAG y los distintos proveedores de inferencia disponibles.
+Este componente constituye una capa de abstracción cuya única responsabilidad es realizar la inferencia mediante el proveedor configurado.
 
 Entre sus responsabilidades se encuentran:
 
 - seleccionar el backend configurado;
-- preparar la solicitud correspondiente;
-- enviar la consulta al proveedor de inferencia;
+- preparar la solicitud de inferencia;
+- enviar la consulta al proveedor correspondiente;
 - recibir la respuesta generada por el modelo;
-- devolver un formato uniforme al resto del sistema.
+- devolver un formato uniforme a `query.py`.
 
-Gracias a esta arquitectura, `query.py` permanece desacoplado de la implementación específica de cada backend.
+La recuperación del conocimiento, la construcción del contexto y la selección de documentos relevantes permanecen completamente bajo la responsabilidad de `query.py`.
 
 ```text
 query.py
+
+     │
+     ▼
+
+Contexto construido
 
      │
      ▼
@@ -206,7 +217,7 @@ LOCAL        CLOUD
 (Ollama)   (OpenRouter)
 ```
 
-Esta organización facilita la incorporación futura de nuevos proveedores sin modificar el flujo principal del pipeline.
+Esta organización facilita la incorporación futura de nuevos proveedores sin modificar el resto del pipeline.
 
 ---
 
@@ -223,58 +234,6 @@ Entre sus funciones principales se encuentran:
 - ejecutar inferencias;
 - exponer una API HTTP accesible desde los scripts Python.
 
----
-
-## Servicio
-
-El servicio de Ollama se encuentra disponible, por defecto, mediante:
-
-```text
-http://localhost:11434
-```
-
----
-
-## API utilizadas
-
-### Generación de texto
-
-```text
-POST /api/generate
-```
-
-Utilizada por `llm_backend.py` cuando el backend seleccionado es LOCAL.
-
----
-
-### Generación de embeddings
-
-```text
-POST /api/embeddings
-```
-
-Utilizada por:
-
-- `embed.py`;
-- `query.py`;
-
-para generar las representaciones vectoriales empleadas durante la recuperación semántica.
-
----
-
-## Modelos locales utilizados
-
-Actualmente la configuración contempla los siguientes modelos:
-
-| Función | Modelo |
-|----------|--------|
-| Embeddings | `nomic-embed-text` |
-| Depuración | `qwen2.5-coder:1.5b` |
-| Arquitectura | `llama3.2:3b` |
-| Documentación | `llama3.2:3b` |
-
-La selección del modelo depende del modo de operación elegido por el usuario y de la configuración del backend.
-
 # 8. Backend CLOUD
 
 ## OpenRouter
@@ -283,23 +242,29 @@ El backend cloud permite delegar la generación de respuestas a modelos de lengu
 
 Su utilización resulta especialmente útil cuando el hardware local no dispone de la capacidad suficiente para ejecutar modelos de mayor tamaño o cuando se desea evaluar distintos modelos remotos manteniendo el mismo pipeline RAG.
 
-La comunicación con OpenRouter se realiza exclusivamente mediante `llm_backend.py`, manteniendo desacoplado el resto de la aplicación.
+La comunicación con OpenRouter se realiza exclusivamente mediante `llm_backend.py`, manteniendo completamente desacoplado el resto del sistema.
+
+La recuperación del conocimiento continúa realizándose localmente en `query.py`, por lo que el backend cloud únicamente recibe el contexto ya construido y genera la respuesta correspondiente.
 
 ---
 
 ## Autenticación
 
-El acceso al servicio requiere una clave de API (API Key), que se carga desde el entorno de ejecución.
+El acceso al servicio requiere una clave de API (API Key), que se carga desde el entorno de ejecución mediante variables de entorno.
 
-La gestión de las credenciales se mantiene separada del código fuente, evitando su incorporación al repositorio.
+La gestión de las credenciales permanece separada del código fuente, evitando su incorporación al repositorio.
+
+Esta organización facilita la sustitución del proveedor de inferencia sin modificar el resto del pipeline.
 
 ---
 
 ## Modelos remotos
 
-El backend cloud permite utilizar diferentes modelos compatibles con OpenRouter.
+El backend cloud permite utilizar distintos modelos compatibles con OpenRouter.
 
-La selección del modelo depende de la configuración activa en la sesión y puede modificarse sin alterar el funcionamiento del pipeline RAG.
+La selección del modelo depende de la configuración activa en la sesión y puede modificarse sin alterar el funcionamiento general del pipeline RAG.
+
+Gracias a la capa de abstracción implementada en `llm_backend.py`, el resto del sistema permanece independiente del proveedor de inferencia utilizado.
 
 ---
 
@@ -313,7 +278,12 @@ query.py
      │
      ▼
 
-Preparación de la consulta
+Recuperación del conocimiento
+
+     │
+     ▼
+
+Construcción del contexto
 
      │
      ▼
@@ -344,7 +314,7 @@ query.py
 Usuario
 ```
 
-Esta arquitectura permite cambiar de backend sin modificar la lógica principal de `query.py`.
+Esta arquitectura permite cambiar de backend sin modificar la lógica principal de `query.py`, manteniendo completamente desacopladas la recuperación del conocimiento y la inferencia.
 
 ---
 
@@ -386,33 +356,55 @@ Con el entorno preparado:
 python3 query.py
 ```
 
-Durante el inicio de la aplicación, el usuario puede seleccionar el modo de operación y el backend configurado para la sesión.
+Durante el inicio de la aplicación, el usuario selecciona el modo de operación.
+
+La configuración de la sesión determina automáticamente:
+
+- modo de trabajo;
+- backend de inferencia;
+- modelo de lenguaje;
+- modelo de embeddings.
+
+Una vez inicializada la sesión, `query.py` coordina el resto del pipeline hasta obtener la respuesta del modelo.
 
 ---
 
-# 11. Consideraciones de hardware
+# 11. Observabilidad
 
-El proyecto fue diseñado considerando equipos con recursos limitados, donde la ejecución de modelos LLM puede representar una carga significativa para el procesador.
+La observabilidad del pipeline se encuentra centralizada en `logger.py`.
 
-Entre las características del entorno utilizado durante el desarrollo se encuentran:
+Este componente registra una sesión independiente para cada consulta realizada mediante `query.py`.
 
-- ejecución principalmente sobre CPU;
-- memoria limitada;
-- ausencia de una GPU dedicada para aceleración de IA;
-- necesidad de controlar la temperatura durante tareas intensivas.
+Entre la información registrada se encuentra:
 
-Estas limitaciones motivaron varias decisiones de diseño, entre ellas:
+- fecha y hora de ejecución;
+- backend utilizado;
+- modelo seleccionado;
+- modelo de embeddings;
+- modo de operación;
+- pregunta realizada;
+- secuencia cronológica de eventos del pipeline.
 
-- utilización de modelos relativamente ligeros para la ejecución local;
-- separación entre recuperación documental e inferencia;
-- incorporación de un backend cloud para ejecutar modelos remotos cuando resulte conveniente;
-- implementación de un mecanismo independiente de supervisión térmica.
+Además, calcula automáticamente las métricas:
+
+- EMBEDDING_TIME;
+- SEARCH_TIME;
+- LLM_TIME;
+- PIPELINE_TIME.
+
+Durante el desarrollo también puede registrarse información adicional mediante la función genérica:
+
+```text
+log_debug()
+```
+
+Esta función permite almacenar información de diagnóstico —como los fragmentos recuperados durante la búsqueda semántica— sin modificar el comportamiento funcional del pipeline.
 
 ---
 
 # 12. Integración con la supervisión térmica
 
-La supervisión térmica forma parte de la arquitectura general del proyecto, aunque se ejecuta de manera independiente del pipeline principal.
+La supervisión térmica forma parte de la arquitectura general del proyecto, aunque se ejecuta completamente desacoplada del pipeline principal.
 
 Su funcionamiento puede resumirse de la siguiente forma:
 
@@ -422,7 +414,17 @@ Windows
       │
       ▼
 
+LibreHardwareMonitor
+
+      │
+      ▼
+
 export_temp_server.py
+
+      │
+      ▼
+
+HTTP / JSON
 
       │
       ▼
@@ -440,9 +442,9 @@ Monitoreo continuo
 Acciones de protección
 ```
 
-Cuando la temperatura supera los umbrales configurados, el watchdog puede registrar el evento y detener el proceso de consulta para proteger el equipo.
+Cuando la temperatura supera los umbrales configurados, `thermal_watchdog.py` puede registrar el evento y finalizar preventivamente la ejecución de `query.py` para proteger el hardware.
 
-La comunicación entre Windows y WSL2 se realiza mediante un servicio HTTP basado en Flask.
+La comunicación entre Windows y WSL2 se realiza mediante un servicio HTTP ligero implementado con Flask.
 
 ---
 
@@ -452,13 +454,18 @@ Actualmente el entorno de ejecución permite:
 
 - ejecutar el pipeline RAG sobre WSL2;
 - generar embeddings mediante Ollama;
+- recuperar conocimiento desde `embeddings.jsonl`;
+- complementar el contexto mediante `symbols.jsonl`;
+- incorporar el contexto recuperado al prompt enviado al LLM;
 - utilizar inferencia local mediante Ollama;
 - utilizar inferencia remota mediante OpenRouter;
 - seleccionar distintos modelos según el modo de operación;
-- registrar la actividad de las consultas;
+- registrar automáticamente la actividad de cada consulta;
+- calcular métricas del pipeline;
+- registrar información adicional de depuración mediante `log_debug()`;
 - supervisar las condiciones térmicas del equipo mediante procesos desacoplados.
 
-La arquitectura mantiene una separación clara entre el procesamiento documental, la inferencia y la supervisión del sistema.
+La arquitectura mantiene una separación clara entre recuperación del conocimiento, inferencia, observabilidad y supervisión térmica.
 
 ---
 
@@ -470,8 +477,9 @@ Entre las posibles líneas de evolución del entorno se encuentran:
 - soporte para nuevos proveedores de inferencia;
 - gestión automática de modelos locales;
 - optimización del consumo de recursos;
-- incorporación de métricas de rendimiento;
-- integración con herramientas de observabilidad y monitorización.
+- ampliación de las capacidades de observabilidad;
+- automatización de la construcción de nuevas bases de conocimiento;
+- soporte para múltiples proyectos mediante repositorios documentales intercambiables.
 
 Estas funcionalidades representan posibles mejoras futuras y no forman parte de la implementación actual.
 
@@ -494,11 +502,18 @@ Python
 Pipeline RAG
         │
         ▼
+Recuperación local
+        │
+        ▼
+Construcción del contexto
+        │
+        ▼
 llm_backend.py
      ┌──┴──┐
      ▼     ▼
  Ollama  OpenRouter
 ```
 
-Esta organización proporciona una plataforma experimental para el desarrollo y evaluación de soluciones RAG, permitiendo utilizar tanto recursos locales como servicios de inferencia remotos, manteniendo una arquitectura modular, extensible y coherente con el estado actual del proyecto.
+Esta organización proporciona una plataforma experimental para el desarrollo y evaluación de asistentes técnicos basados en RAG, permitiendo mantener la recuperación del conocimiento bajo control local mientras la inferencia puede realizarse tanto mediante recursos locales como servicios remotos.
 
+La separación entre recuperación, inferencia, observabilidad y supervisión térmica constituye uno de los principales principios arquitectónicos alcanzados por el proyecto y facilita su evolución hacia futuras versiones del asistente técnico.

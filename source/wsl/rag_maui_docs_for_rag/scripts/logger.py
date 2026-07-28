@@ -6,10 +6,10 @@ Archivo:
 logger.py
 
 Versión:
-1.4
+1.5
 
 Fecha:
-24 de Julio de 2026
+28 de Julio de 2026
 
 Descripción:
 ------------
@@ -23,12 +23,18 @@ funcional del sistema.
 Cada pregunta realizada por el usuario genera una nueva
 sesión de registro independiente en query_log.txt.
 
+Además del registro cronológico y las métricas de
+rendimiento, el módulo proporciona un mecanismo genérico
+de depuración que permite almacenar información técnica
+adicional generada durante la ejecución del sistema.
+
 Responsabilidades:
 ------------------
 # Registrar los eventos relevantes del pipeline.
 # Inicializar una nueva sesión de log por consulta.
 # Calcular automáticamente métricas de rendimiento.
 # Generar un resumen al finalizar la ejecución.
+# Registrar información adicional de depuración.
 # Mantener compatibilidad con el resto del proyecto.
 
 Métricas registradas:
@@ -38,46 +44,67 @@ Métricas registradas:
 # LLM_TIME
 # PIPELINE_TIME
 
+Capacidades de depuración:
+--------------------------
+# Registrar información arbitraria desde cualquier módulo.
+# Centralizar la información de diagnóstico en query_log.txt.
+# Facilitar el análisis del pipeline sin modificar la lógica
+# principal de los componentes.
+# Mantener desacoplado el mecanismo de depuración del resto
+# de la arquitectura.
+
 Arquitectura:
 -------------
 
                 query.py
                     │
-          log_step(...) / init_logger()
+        log_step(...) / log_debug(...)
                     │
                     ▼
                logger.py
                     │
-      ┌─────────────┼─────────────┐
-      │             │             │
-      ▼             ▼             ▼
- Registro      Métricas      Resumen final
- cronológico   automáticas    query_log.txt
+      ┌─────────────┼──────────────┐
+      │             │              │
+      ▼             ▼              ▼
+ Registro      Métricas      Información
+ cronológico   automáticas   de depuración
+                    │
+                    ▼
+               query_log.txt
 
-Cambios versión 1.4:
+Cambios versión 1.5:
 --------------------
-# Se registra una sesión independiente por cada consulta.
-# Se incorporan métricas automáticas del pipeline.
-# El tiempo total pasa a medirse como PIPELINE_TIME.
-# PIPELINE_TIME comprende desde INPUT_RECEIVED hasta
-# ANSWER_PRINTED, excluyendo el tiempo de espera del usuario.
-# Se genera automáticamente un resumen de rendimiento
-# al finalizar cada consulta.
-# Se mantiene compatibilidad completa con query.py.
+# Se mantiene una sesión independiente por cada consulta.
+# Se conservan las métricas automáticas del pipeline.
+# Se mantiene PIPELINE_TIME como tiempo total de ejecución
+# de la consulta.
+# Se incorpora la función genérica log_debug().
+# Cualquier módulo puede registrar información adicional
+# de depuración en query_log.txt.
+# Se centraliza el registro de diagnóstico en logger.py,
+# evitando código de depuración distribuido por el proyecto.
+# Se mantiene compatibilidad completa con query.py y el
+# resto de los módulos del sistema.
 
 Principio arquitectónico:
 -------------------------
 logger.py constituye un componente de observabilidad.
-No participa en la recuperación del conocimiento ni en
-la generación de respuestas; únicamente registra el
-comportamiento del sistema para facilitar análisis,
-optimización y diagnóstico.
+
+No participa en la recuperación del conocimiento, la
+búsqueda semántica ni la generación de respuestas.
+
+Su única responsabilidad consiste en registrar el
+comportamiento del sistema, calcular métricas de
+rendimiento y almacenar información de diagnóstico para
+facilitar el análisis, la optimización y la depuración
+del pipeline RAG.
 
 Objetivo de la versión:
 -----------------------
-Consolidar un mecanismo uniforme de trazabilidad y
-medición del rendimiento del pipeline RAG mediante un
-registro independiente para cada consulta realizada.
+Consolidar un mecanismo uniforme de trazabilidad,
+medición del rendimiento y registro de información de
+depuración, proporcionando un punto centralizado de
+observabilidad para todos los componentes del sistema.
 
 =============================================================
 """
@@ -364,3 +391,48 @@ def is_aborted():
     """
 
     return False
+
+# =========================
+# DEBUG
+# =========================
+
+def log_debug(
+    title,
+    text
+):
+    """
+    Registra información adicional de depuración
+    en el archivo de log activo.
+
+    Puede utilizarse desde cualquier módulo del
+    proyecto para almacenar información temporal
+    durante el desarrollo sin afectar el registro
+    principal del pipeline.
+    """
+
+    if LOG_FILE is None:
+        return
+
+    with open(
+        LOG_FILE,
+        "a",
+        encoding="utf-8"
+    ) as f:
+
+        f.write("\n")
+
+        f.write(
+            "================================\n"
+        )
+
+        f.write(
+            f"{title}\n"
+        )
+
+        f.write(
+            "================================\n\n"
+        )
+
+        f.write(text)
+
+        f.write("\n")

@@ -2,29 +2,42 @@
 
 ## 1. Introducción
 
-El pipeline **RAG (Retrieval-Augmented Generation)** implementado en este proyecto permite consultar información técnica almacenada localmente mediante una secuencia de procesamiento compuesta por:
+El pipeline **RAG (Retrieval-Augmented Generation)** implementado en este proyecto constituye el núcleo funcional del asistente técnico desarrollado en **Arquitectura_RAG_Termica**.
 
-- ingestión documental,
-- extracción de símbolos arquitectónicos,
-- generación de embeddings,
-- recuperación semántica,
-- construcción del contexto de consulta,
-- inferencia mediante un modelo de lenguaje (LLM).
+Su propósito consiste en recuperar conocimiento desde una base documental local, construir un contexto de trabajo y delegar la generación de respuestas a un backend de inferencia desacoplado.
 
-La arquitectura fue diseñada para ejecutarse principalmente sobre hardware de recursos limitados, separando el procesamiento documental de la inferencia y permitiendo seleccionar distintos backends LLM mediante una capa de abstracción.
+Actualmente el pipeline implementa las siguientes etapas principales:
+
+- ingestión documental;
+- extracción de información estructural;
+- generación de embeddings;
+- recuperación semántica;
+- construcción del contexto;
+- construcción del prompt;
+- inferencia mediante un modelo de lenguaje (LLM);
+- observabilidad del pipeline.
+
+La arquitectura fue diseñada para ejecutarse sobre hardware de recursos limitados, separando claramente el procesamiento documental, la recuperación del conocimiento, la inferencia y la supervisión térmica.
 
 Actualmente el proyecto soporta dos modalidades de inferencia:
 
 - **Backend LOCAL**, utilizando Ollama.
 - **Backend CLOUD**, utilizando OpenRouter.
 
-Esta separación permite mantener el mismo flujo RAG independientemente del proveedor encargado de generar la respuesta.
+Esta separación permite mantener exactamente el mismo pipeline RAG independientemente del proveedor encargado de generar la respuesta.
+
+Es importante distinguir entre dos conceptos:
+
+- **el asistente técnico**, implementado por Arquitectura_RAG_Termica;
+- **la base de conocimiento activa**, formada por la documentación y el código fuente del proyecto que se desea analizar.
+
+En el estado actual del desarrollo, dicha base de conocimiento corresponde a una aplicación desarrollada con .NET MAUI, utilizada como caso de uso para validar el funcionamiento del asistente.
 
 ---
 
 # 2. Arquitectura general del pipeline
 
-El flujo principal implementado es el siguiente:
+El flujo principal implementado actualmente es el siguiente:
 
 ```text
                  DOCUMENTOS
@@ -70,7 +83,12 @@ El flujo principal implementado es el siguiente:
                      │
                      ▼
 
-      Construcción del contexto de trabajo
+      Construcción del contexto
+
+                     │
+                     ▼
+
+      Construcción del prompt
 
                      │
                      ▼
@@ -89,7 +107,7 @@ El flujo principal implementado es el siguiente:
                  Respuesta final
 ```
 
-La supervisión térmica se ejecuta de forma independiente mediante procesos auxiliares, sin formar parte del flujo principal de procesamiento del pipeline.
+La supervisión térmica continúa ejecutándose de forma independiente mediante procesos auxiliares, sin formar parte del flujo funcional del pipeline.
 
 ---
 
@@ -117,6 +135,8 @@ En las pruebas realizadas se ha utilizado, entre otros, el directorio:
 
 La ubicación puede modificarse según las necesidades del proyecto.
 
+La arquitectura del asistente no depende de una ubicación específica; únicamente requiere una colección documental compatible con el proceso de ingestión.
+
 ---
 
 ## Tipos de archivos procesados
@@ -142,12 +162,12 @@ Dependiendo de la ubicación o del tipo de archivo, pueden identificarse compone
 
 | Ubicación detectada | Clasificación utilizada |
 |---------------------|-------------------------|
-| ViewModel           | ViewModel               |
-| View / XAML         | UI                      |
-| Service / API       | Service                 |
-| Otros archivos      | Model                   |
+| ViewModel | ViewModel |
+| View / XAML | UI |
+| Service / API | Service |
+| Otros archivos | Model |
 
-Esta clasificación constituye un apoyo para la organización documental y no representa una validación formal de la arquitectura del proyecto.
+Esta clasificación constituye un apoyo para la organización documental y no representa una validación formal de la arquitectura del proyecto analizado.
 
 ---
 
@@ -224,11 +244,11 @@ embeddings.jsonl
 
 ## Información almacenada
 
-Cada registro generado conserva información necesaria para la recuperación posterior, incluyendo:
+Cada registro generado conserva la información necesaria para la recuperación posterior, incluyendo:
 
-- archivo de origen,
-- clasificación documental,
-- contenido textual,
+- archivo de origen;
+- clasificación documental;
+- contenido textual;
 - embedding correspondiente.
 
 Ejemplo simplificado:
@@ -252,14 +272,14 @@ Los principales índices son:
 
 | Archivo | Propósito |
 |----------|-----------|
-| `embeddings.jsonl` | Almacena los embeddings documentales. |
-| `symbols.jsonl` | Almacena información estructurada extraída del código mediante `symbol_extractor.py`. |
+| `embeddings.jsonl` | Almacena los embeddings documentales y el contenido recuperado por el pipeline RAG. |
+| `symbols.jsonl` | Almacena información estructural extraída del código mediante `symbol_extractor.py`. |
 
 Cada archivo mantiene una función específica dentro del proceso de recuperación de información.
 
 Actualmente no se utiliza una base vectorial dedicada (por ejemplo, FAISS, Chroma o Milvus), ya que el tamaño del conjunto documental permite trabajar eficientemente mediante archivos locales.
 
-Esta decisión simplifica el despliegue y facilita la inspección manual de los datos generados durante las pruebas.
+Esta decisión simplifica el despliegue, facilita la inspección manual de los datos generados y permite comprender con mayor facilidad el funcionamiento interno del pipeline durante las etapas de desarrollo y validación.
 
 ---
 
@@ -267,96 +287,30 @@ Esta decisión simplifica el despliegue y facilita la inspección manual de los 
 
 ## 6.1 query.py
 
-`query.py` constituye el punto de entrada para las consultas del usuario.
+`query.py` constituye el punto de entrada para las consultas realizadas por el usuario.
 
 Entre sus responsabilidades principales se encuentran:
 
 - recibir la consulta del usuario;
+- gestionar la sesión de trabajo;
 - generar el embedding de la pregunta;
 - recuperar los documentos más similares;
-- preparar la información necesaria para la inferencia;
+- recuperar información estructural cuando corresponda;
+- construir el contexto que será enviado al modelo de lenguaje;
+- construir el prompt final;
 - seleccionar el modo de operación;
 - delegar la generación de la respuesta al backend LLM configurado;
 - registrar la ejecución mediante `logger.py`.
 
 La comunicación con el modelo de lenguaje no se realiza directamente desde `query.py`, sino a través de la capa de abstracción implementada en `llm_backend.py`, lo que permite utilizar distintos proveedores de inferencia sin modificar el flujo principal del pipeline.
 
----
-# 7. Modos de operación
-
-Al iniciar `query.py`, el usuario selecciona el modo de trabajo que determina el modelo y el tipo de asistencia esperada.
-
-Ejemplo del menú:
-
-```text
-=== MODO IA ===
-
-1. DEPURACIÓN
-2. ARQUITECTURA
-3. DOCUMENTACIÓN
-```
-
-Cada modo configura automáticamente el modelo LLM y el prompt base correspondiente.
-
----
-
-## Modo 1 — DEPURACIÓN
-
-Modelo configurado actualmente:
-
-```text
-qwen2.5-coder:1.5b
-```
-
-Orientado principalmente a:
-
-- análisis de errores de compilación;
-- revisión de código C#;
-- resolución de problemas relacionados con .NET MAUI;
-- asistencia durante tareas de desarrollo.
-
-Entre las funcionalidades implementadas se incluyen mecanismos para identificar códigos de error de compilación y realizar búsquedas documentales más específicas cuando corresponde.
-
----
-
-## Modo 2 — ARQUITECTURA
-
-Modelo configurado actualmente:
-
-```text
-llama3.2:3b
-```
-
-Orientado al análisis de:
-
-- arquitectura del sistema;
-- relaciones entre componentes;
-- organización del proyecto;
-- estructura del código.
-
----
-
-## Modo 3 — DOCUMENTACIÓN
-
-Modelo configurado actualmente:
-
-```text
-llama3.2:3b
-```
-
-Orientado principalmente a:
-
-- explicación del funcionamiento del proyecto;
-- generación y revisión de documentación técnica;
-- descripción de componentes y procesos.
-
----
+En la versión actual, el contenido recuperado desde `embeddings.jsonl` vuelve a incorporarse explícitamente al contexto enviado al modelo de lenguaje, permitiendo que la recuperación semántica participe activamente en la generación de respuestas.
 
 # 8. Recuperación semántica
 
-Durante una consulta, el sistema genera el embedding asociado a la pregunta y lo compara con los embeddings almacenados.
+Durante una consulta, `query.py` genera el embedding asociado a la pregunta del usuario y lo compara con los embeddings previamente almacenados en `embeddings.jsonl`.
 
-El proceso puede resumirse como:
+El proceso implementado puede resumirse de la siguiente forma:
 
 ```text
 Pregunta del usuario
@@ -369,33 +323,38 @@ Embedding de la consulta
         │
         ▼
 
-Comparación con
+Comparación mediante similitud coseno
+
+        │
+        ▼
 
 embeddings.jsonl
 
         │
         ▼
 
-Cálculo de similitud
+Selección de los mejores resultados
 
         │
         ▼
 
-Selección de resultados
+Construcción del contexto enviado al LLM
 ```
 
 La implementación actual utiliza similitud coseno para comparar los vectores.
 
-La configuración observada en el código incluye:
+La configuración vigente del código incluye:
 
 ```python
 TOP_K = 1
 SIM_THRESHOLD = 0.25
 ```
 
-Estos parámetros determinan el número máximo de resultados recuperados y el umbral mínimo de similitud aceptado.
+Estos parámetros determinan el número máximo de fragmentos recuperados y el umbral mínimo de similitud aceptado.
 
-> **Nota:** La recuperación documental forma parte del pipeline implementado. El modo exacto en que dicha información recuperada participa en la construcción final del prompt continúa en evaluación y se documentará con mayor detalle cuando esa integración sea revisada específicamente.
+A diferencia de versiones anteriores del proyecto, los fragmentos recuperados ya no se utilizan únicamente para fines de depuración. Actualmente forman parte del contexto enviado al modelo de lenguaje, permitiendo que las respuestas se fundamenten en el contenido de la base de conocimiento local.
+
+Durante el desarrollo puede habilitarse una bandera de depuración (`DEBUG_CHUNKS`) que muestra por consola y registra en `query_log.txt` los fragmentos recuperados, facilitando la validación del proceso de búsqueda semántica sin afectar el funcionamiento normal del pipeline.
 
 ---
 
@@ -415,7 +374,7 @@ Endpoint habitual:
 http://localhost:11434
 ```
 
-Los modelos utilizados actualmente son:
+Los modelos configurados actualmente son:
 
 | Función | Modelo |
 |----------|--------|
@@ -430,25 +389,25 @@ Los modelos utilizados actualmente son:
 
 El backend cloud utiliza OpenRouter como proveedor de inferencia remota.
 
-La selección del backend se realiza desde la configuración de la sesión, manteniendo el mismo flujo general de procesamiento del pipeline.
+La selección del backend se realiza desde la configuración de la sesión, manteniendo exactamente el mismo pipeline de recuperación documental.
 
-Gracias a esta abstracción, el resto del sistema permanece independiente del proveedor utilizado para generar la respuesta.
+De esta forma, independientemente del proveedor utilizado para la inferencia, la recuperación del conocimiento continúa realizándose localmente.
 
 ---
 
-# 10. Registro y supervisión térmica
+# 10. Registro y observabilidad
 
-El pipeline incorpora mecanismos auxiliares para registrar la ejecución de las consultas y supervisar el estado térmico del equipo.
+El pipeline incorpora mecanismos de observabilidad desacoplados mediante `logger.py`.
 
-Estos componentes funcionan de manera desacoplada respecto al procesamiento principal.
-
-## logger.py
-
-Registra información relevante de cada consulta, incluyendo eventos como:
+Cada consulta genera una sesión independiente de registro en:
 
 ```text
-SESSION_START
-MODE_SELECTED
+query_log.txt
+```
+
+Durante la ejecución se registran, entre otros, los siguientes eventos:
+
+```text
 INPUT_RECEIVED
 EMBEDDING_START
 EMBEDDING_OK
@@ -456,24 +415,35 @@ SEARCH_START
 SEARCH_DONE
 LLM_START
 LLM_DONE
-SESSION_END
+ANSWER_PRINTED
 ```
 
-Estos registros facilitan el seguimiento del funcionamiento del sistema y el análisis posterior de incidencias.
+Además de la secuencia cronológica de eventos, el sistema calcula automáticamente métricas de rendimiento como:
+
+- EMBEDDING_TIME
+- SEARCH_TIME
+- LLM_TIME
+- PIPELINE_TIME
+
+`logger.py` incorpora también una función genérica `log_debug()` destinada exclusivamente al desarrollo y diagnóstico.
+
+Esta función permite registrar información adicional —como los fragmentos recuperados por la búsqueda semántica— sin modificar el flujo principal del pipeline ni la lógica funcional de `query.py`.
 
 ---
 
-## thermal_watchdog.py
+# 11. Supervisión térmica
 
-Supervisa periódicamente la temperatura del procesador utilizando la información proporcionada por `export_temp_server.py`.
+El pipeline incorpora un mecanismo independiente de supervisión térmica implementado mediante `thermal_watchdog.py`.
 
-Cuando se alcanzan determinados umbrales configurados, el watchdog puede ejecutar acciones de protección, incluyendo la finalización del proceso de consulta para evitar condiciones de sobretemperatura.
+Este componente consulta periódicamente la temperatura del procesador utilizando la información publicada por `export_temp_server.py`.
 
-La descripción detallada de este mecanismo se presenta en el documento dedicado a la supervisión térmica.
+Cuando se alcanzan determinados umbrales configurados, el watchdog puede ejecutar acciones preventivas, incluyendo la finalización del proceso de consulta para proteger el hardware frente a condiciones de sobretemperatura.
+
+Al encontrarse completamente desacoplado del pipeline RAG, este mecanismo puede evolucionar independientemente del resto del sistema.
 
 ---
 
-# 11. Flujo general de una consulta
+# 12. Flujo general de una consulta
 
 El siguiente esquema resume el procesamiento realizado durante una consulta.
 
@@ -488,7 +458,7 @@ Pregunta
    │
    ▼
 
-Generación del embedding
+Embedding de la consulta
 
    │
    ▼
@@ -498,7 +468,7 @@ Recuperación semántica
    │
    ▼
 
-Preparación del contexto
+Construcción del contexto
 
    │
    ▼
@@ -514,57 +484,68 @@ Inferencia del LLM
    ▼
 
 Respuesta
+
+   │
+   ▼
+
+Registro de métricas
 ```
 
-Este flujo representa la secuencia general implementada por el sistema, independientemente del backend seleccionado.
+Este flujo permanece invariable independientemente del backend de inferencia utilizado.
 
 ---
 
-# 12. Capacidades implementadas
+# 13. Capacidades implementadas
 
 En su estado actual, el pipeline permite:
 
 - procesar documentación técnica local;
 - generar embeddings mediante `nomic-embed-text`;
-- realizar recuperación semántica sobre los documentos indexados;
-- utilizar distintos modos de operación especializados;
+- realizar recuperación semántica sobre documentos indexados;
+- incorporar al contexto los fragmentos recuperados mediante RAG;
+- complementar dicho contexto con información arquitectónica procedente de `symbols.jsonl`;
+- utilizar distintos modos especializados de operación;
 - seleccionar entre backend local y backend cloud;
-- registrar la ejecución de cada consulta;
-- supervisar las condiciones térmicas del sistema mediante procesos independientes.
+- registrar automáticamente cada consulta;
+- calcular métricas del pipeline;
+- registrar información adicional de depuración mediante `log_debug()`;
+- supervisar continuamente las condiciones térmicas del sistema mediante procesos independientes.
 
 ---
 
-# 13. Evolución prevista
+# 14. Evolución prevista
 
-Entre las posibles líneas de evolución del proyecto se encuentran:
+Entre las principales líneas de evolución del proyecto se encuentran:
 
 - incorporación de una base vectorial especializada;
 - optimización de las estrategias de fragmentación (chunking);
 - incorporación de recuperación híbrida (texto + vectores);
 - ampliación del soporte para nuevos modelos LLM;
 - incorporación de memoria conversacional;
-- métricas de rendimiento del pipeline;
-- mejoras en la integración del contexto recuperado durante la generación de respuestas.
+- mejora de las métricas de observabilidad;
+- automatización del proceso de construcción de bases de conocimiento;
+- soporte para múltiples proyectos mediante bases documentales intercambiables.
 
-Las funcionalidades anteriores representan posibles evoluciones del proyecto y no forman parte de la implementación actual.
+Estas funcionalidades representan posibles evoluciones del proyecto y no forman parte de la implementación actual.
 
 ---
 
-# 14. Estado actual
+# 15. Estado actual
 
-El pipeline RAG implementado proporciona una plataforma experimental para el análisis de documentación técnica y código fuente mediante modelos de lenguaje.
+El pipeline RAG implementado constituye actualmente el núcleo operativo del asistente técnico.
 
-Actualmente dispone de:
+Dispone de:
 
 - ingestión documental;
 - generación de embeddings;
 - recuperación semántica;
+- incorporación efectiva del contexto recuperado al prompt enviado al LLM;
 - extracción de símbolos arquitectónicos;
 - selección de modos especializados;
 - abstracción del backend de inferencia;
 - soporte para ejecución local y cloud;
-- registro de consultas;
-- supervisión térmica desacoplada.
+- observabilidad mediante `logger.py`;
+- registro opcional de información de depuración;
+- supervisión térmica completamente desacoplada.
 
-La arquitectura continúa evolucionando de forma incremental, priorizando la coherencia entre la documentación y el comportamiento real del código fuente.
-
+La arquitectura continúa evolucionando de forma incremental, manteniendo como principio fundamental la separación de responsabilidades y la coherencia entre la documentación técnica y el comportamiento real del código fuente.

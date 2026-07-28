@@ -621,3 +621,4 @@ En particular, se comprobó el correcto funcionamiento de:
 Las pruebas también permitieron identificar limitaciones derivadas del hardware disponible, motivando la incorporación de mecanismos específicos de protección térmica y la posterior evolución hacia una arquitectura con soporte para distintos backends de inferencia.
 
 En su estado actual, el proyecto constituye una plataforma experimental estable para el desarrollo y evaluación de arquitecturas RAG, manteniendo un equilibrio entre capacidad de experimentación, protección del hardware y coherencia entre la implementación y la documentación técnica.
+
