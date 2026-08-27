@@ -1,4 +1,4 @@
-"""
+""""
 =============================================================
 Proyecto: Arquitectura RAG local con supervisión térmica
 
@@ -25,8 +25,9 @@ sesión de registro independiente en query_log.txt.
 
 Además del registro cronológico y las métricas de
 rendimiento, el módulo proporciona un mecanismo genérico
-de depuración que permite almacenar información técnica
-adicional generada durante la ejecución del sistema.
+de depuración que permite a cualquier componente del
+proyecto registrar información técnica adicional durante
+la ejecución del sistema.
 
 Responsabilidades:
 ------------------
@@ -34,7 +35,8 @@ Responsabilidades:
 # Inicializar una nueva sesión de log por consulta.
 # Calcular automáticamente métricas de rendimiento.
 # Generar un resumen al finalizar la ejecución.
-# Registrar información adicional de depuración.
+# Proporcionar un mecanismo genérico para registrar
+# información de depuración.
 # Mantener compatibilidad con el resto del proyecto.
 
 Métricas registradas:
@@ -46,7 +48,8 @@ Métricas registradas:
 
 Capacidades de depuración:
 --------------------------
-# Registrar información arbitraria desde cualquier módulo.
+# Registrar información arbitraria enviada por cualquier
+# componente del sistema.
 # Centralizar la información de diagnóstico en query_log.txt.
 # Facilitar el análisis del pipeline sin modificar la lógica
 # principal de los componentes.
@@ -79,8 +82,8 @@ Cambios versión 1.5:
 # Se mantiene PIPELINE_TIME como tiempo total de ejecución
 # de la consulta.
 # Se incorpora la función genérica log_debug().
-# Cualquier módulo puede registrar información adicional
-# de depuración en query_log.txt.
+# Cualquier componente del sistema puede registrar
+# información adicional de depuración mediante log_debug().
 # Se centraliza el registro de diagnóstico en logger.py,
 # evitando código de depuración distribuido por el proyecto.
 # Se mantiene compatibilidad completa con query.py y el
@@ -91,20 +94,24 @@ Principio arquitectónico:
 logger.py constituye un componente de observabilidad.
 
 No participa en la recuperación del conocimiento, la
-búsqueda semántica ni la generación de respuestas.
+búsqueda semántica, la construcción del contexto ni la
+generación de respuestas.
 
 Su única responsabilidad consiste en registrar el
 comportamiento del sistema, calcular métricas de
-rendimiento y almacenar información de diagnóstico para
-facilitar el análisis, la optimización y la depuración
-del pipeline RAG.
+rendimiento y almacenar la información de diagnóstico
+que otros componentes decidan registrar, facilitando el
+análisis, la optimización y la depuración del pipeline
+RAG.
 
 Objetivo de la versión:
 -----------------------
 Consolidar un mecanismo uniforme de trazabilidad,
 medición del rendimiento y registro de información de
 depuración, proporcionando un punto centralizado de
-observabilidad para todos los componentes del sistema.
+observabilidad para todos los componentes del sistema,
+manteniendo completamente desacoplado el mecanismo de
+registro respecto a la lógica funcional del pipeline.
 
 =============================================================
 """

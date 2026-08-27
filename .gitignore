@@ -1,10 +1,11 @@
 # ============================================================
 # Arquitectura RAG local con supervisión térmica
 # Archivo: .gitignore
+# Versión: 0.5.1 (Actualizado: 26-Ago-2026)
 # ============================================================
 
 # ----------------------------
-# Python
+# Python / Artefactos de ejecución
 # ----------------------------
 __pycache__/
 *.pyc
@@ -17,40 +18,20 @@ venv_rag/
 .venv/
 
 # ----------------------------
-# Logs
+# Logs & Auditoría de sesión
 # ----------------------------
 *.log
 *.tmp
+query_log.txt
+thermal_watchdog_log.txt
 
 # ----------------------------
-# Archivos generados por el RAG
-# (descomentar si no se desean versionar)
+# Red / Descubrimiento dinámico de IP
 # ----------------------------
-# embeddings.jsonl
-# query_log.txt
-# thermal_watchdog_log.txt
+windows_ip.txt
 
 # ----------------------------
-# VSCode
-# ----------------------------
-.vscode/
-
-# ----------------------------
-# Windows
-# ----------------------------
-Thumbs.db
-Desktop.ini
-
-# Alternate Data Streams (ADS)
-*:Zone.Identifier
-
-# ----------------------------
-# macOS
-# ----------------------------
-.DS_Store
-
-# ----------------------------
-# Archivos temporales
+# Respaldos y archivos temporales
 # ----------------------------
 *.bak
 *.old
@@ -58,6 +39,22 @@ Desktop.ini
 *~
 
 # ----------------------------
-# OpenRouter
+# Entorno & Credenciales de Seguridad (OpenRouter / APIs)
 # ----------------------------
 *.env
+.env
+.env.*
+
+# ----------------------------
+# IDEs & Editores
+# ----------------------------
+.vscode/
+.idea/
+
+# ----------------------------
+# Sistema operativo (Windows / macOS)
+# ----------------------------
+Thumbs.db
+Desktop.ini
+*:Zone.Identifier
+.DS_Store

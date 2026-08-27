@@ -1,4 +1,17 @@
-# Arquitectura del Sistema
+# 02 — Arquitectura del Sistema
+
+**Fecha:** 26 de agosto de 2026  
+**Versión:** 0.5.1  
+**Estado:** Consolidado / Documentación oficial  
+**Módulo:** Arquitectura del Sistema / Distribución de Componentes  
+**Propósito:** Especificación de la arquitectura híbrida, distribución de responsabilidades en WSL2 y Windows, pipeline de símbolos (KS2), abstracción de inferencia y mecanismos de supervisión térmica.
+
+---
+
+> **Resumen ejecutivo:**  
+> La arquitectura de **Arquitectura_RAG_Termica** se organiza como una plataforma híbrida, modular y desacoplada para asistentes técnicos. El sistema separa estrictamente la preparación y filtrado del espacio de trabajo (`knowledge_filter.py`), la extracción determinista de símbolos (`symbols_extractor.py` / `csharp_parser.py`), la sincronización vectorial (`embed.py`), el pipeline de consulta (`query.py`), la abstracción de inferencia (`llm_backend.py`), la observabilidad (`logger.py`) y la protección térmica independiente sobre hardware anfitrión (`thermal_watchdog.py`).
+
+---
 
 ## 1. Introducción
 
@@ -8,104 +21,105 @@ El objetivo principal es separar claramente las distintas responsabilidades del 
 
 Actualmente la arquitectura distingue dos niveles claramente diferenciados:
 
-- **La plataforma asistente**, implementada por el proyecto Arquitectura_RAG_Termica.
-- **El proyecto técnico asistido**, cuya documentación y código fuente constituyen la base de conocimiento activa utilizada por el pipeline RAG.
+* **La plataforma asistente**, implementada por el proyecto Arquitectura_RAG_Termica.
+* **El proyecto técnico asistido**, cuya documentación y código fuente constituyen la base de conocimiento activa utilizada por el pipeline RAG y el extractor de símbolos (KS2).
 
-En el estado actual del proyecto, la base de conocimiento corresponde a una aplicación desarrollada con **.NET MAUI**. Sin embargo, la arquitectura ha sido diseñada para que dicha base pueda sustituirse posteriormente por la documentación o el código fuente de cualquier otro proyecto, sin modificar el funcionamiento interno del asistente.
+En el estado actual del proyecto, la base de conocimiento activa corresponde a una aplicación desarrollada con **.NET MAUI**, procesada dinámicamente desde el espacio de trabajo `~/rag_workspace/<Proyecto>`. La arquitectura ha sido diseñada para que dicha base pueda sustituirse posteriormente por la documentación o el código fuente de cualquier otro proyecto, sin modificar el funcionamiento interno del asistente.
 
 La arquitectura continúa organizándose en dos entornos complementarios:
 
-- **Windows**, responsable del acceso al hardware físico y de la publicación de la información térmica.
-- **WSL2 Ubuntu**, responsable de la ejecución del pipeline RAG, la recuperación del conocimiento, la inferencia mediante modelos de lenguaje y la supervisión del sistema.
+* **Windows**, responsable del acceso al hardware físico y de la publicación de la información térmica mediante un servicio HTTP en Flask.
+* **WSL2 Ubuntu**, responsable de la ejecución del pipeline RAG, la filtración del workspace, la extracción atómica de símbolos, la recuperación del conocimiento, la inferencia mediante modelos de lenguaje y la supervisión del sistema.
 
 Uno de los principios arquitectónicos más importantes consiste en la separación entre:
 
-- recuperación del conocimiento;
-- construcción del contexto;
-- generación de respuestas;
-- observabilidad;
-- supervisión térmica.
+* filtrado y preparación documental;
+* extracción de símbolos y parsers de lenguaje (KS2);
+* recuperación del conocimiento y persistencia vectorial;
+* construcción del contexto;
+* generación de respuestas (inferencia desacoplada);
+* observabilidad y métricas;
+* supervisión térmica independiente.
 
 Esta separación permite incorporar nuevos modelos, nuevos proveedores de inferencia y nuevas bases documentales sin modificar el núcleo del pipeline.
 
 ---
 
-# 2. Arquitectura general
+## 2. Arquitectura general
 
-La arquitectura actual puede representarse mediante el siguiente esquema:
+La arquitectura actual se representa mediante el siguiente esquema de componentes interactivos:
 
 ```text
-                         EQUIPO FÍSICO
+                               EQUIPO FÍSICO
 
-                 +-----------------------------+
-                 |                             |
-                 v                             v
+                  +-----------------------------------+
+                  |                                   |
+                  v                                   v
 
-             WINDOWS                     WSL2 Ubuntu
+               WINDOWS                            WSL2 Ubuntu
 
-      LibreHardwareMonitor            Pipeline RAG
-               |                           |
-               v                           |
-      export_temp_server.py                |
-               |                           |
-          HTTP / JSON                      |
-               |                           |
-               +------------+--------------+
-                            |
-                            v
-                  thermal_watchdog.py
-                            |
-                            |
-                            v
-                        query.py
-                            |
-             Recuperación del conocimiento
-                            |
-             +--------------+--------------+
-             |                             |
-             v                             v
-      embeddings.jsonl             symbols.jsonl
-             |                             |
-             +--------------+--------------+
-                            |
-                            v
-                 Construcción del contexto
-                            |
-                            v
-                    llm_backend.py
-                     /            \
-                    /              \
-                   v                v
-             Ollama Local     OpenRouter Cloud
-                            |
-                            v
-                      Respuesta final
+        LibreHardwareMonitor                     Pipeline RAG / KS2
+                 |                                    |
+                 v                                    v
+       export_temp_server.py                knowledge_filter.py (v1.7)
+                 |                                    |
+                 | HTTP / JSON                        v
+                 |                          symbols_extractor.py (v1.1)
+                 |                          + csharp_parser.py (v2.1.5)
+                 |                                    |
+                 +-------------------+                v
+                                     |            embed.py
+                                     v                |
+                            thermal_watchdog.py       v
+                                     |             query.py
+                                     +----------------+
+                                                      |
+                                     Recuperación del conocimiento
+                                                      |
+                                     +----------------+----------------+
+                                     |                                 |
+                                     v                                 v
+                              embeddings.jsonl                   symbols.jsonl /
+                                                                 symbols_raw.jsonl
+                                     |                                 |
+                                     +----------------+----------------+
+                                                      |
+                                                      v
+                                           Construcción del contexto
+                                                      |
+                                                      v
+                                              llm_backend.py
+                                              /                                                          /                                                           v                 v
+                                       Ollama Local     OpenRouter Cloud
+                                                      |
+                                                      v
+                                               Respuesta final
 ```
 
-La recuperación del conocimiento permanece completamente local.
+La recuperación del conocimiento y la extracción estructural de código permanecen completamente locales.
 
-El contexto construido a partir de la búsqueda semántica constituye la principal fuente de información enviada al modelo de lenguaje.
+El contexto construido a partir de la búsqueda semántica y la información arquitectónica extraída constituye la principal fuente de conocimiento enviada al modelo de lenguaje.
 
-La generación de la respuesta se delega completamente al backend de inferencia seleccionado.
+La generación de la respuesta se delega completamente al backend de inferencia seleccionado via `llm_backend.py`.
 
 ---
 
-# 3. Distribución de componentes
+## 3. Distribución de componentes
 
-## 3.1 Componentes Windows
+### 3.1 Componentes Windows
 
-Windows mantiene el acceso directo al hardware y proporciona la información necesaria para la supervisión térmica.
+Windows mantiene el acceso directo al hardware físico y proporciona la información necesaria para la supervisión térmica.
 
 Los principales componentes son:
 
 | Componente | Responsabilidad |
-|------------|-----------------|
-| LibreHardwareMonitor | Acceso a sensores físicos |
-| export_temp_server.py | Publicación de la información térmica mediante HTTP |
-| start_server.bat | Inicio del servicio térmico |
-| stop_server.bat | Finalización del servicio térmico |
+| :--- | :--- |
+| **`LibreHardwareMonitor`** | Acceso a sensores físicos del procesador y hardware |
+| **`export_temp_server.py`** | Publicación de la información térmica mediante servicio HTTP Flask en puerto 5005 |
+| **`start_server.bat`** | Inicio automático del servicio térmico en Windows |
+| **`stop_server.bat`** | Finalización del servicio térmico |
 
-### Flujo de funcionamiento
+#### Flujo de funcionamiento térmico:
 
 ```text
 LibreHardwareMonitor
@@ -114,365 +128,239 @@ LibreHardwareMonitor
 export_temp_server.py
           |
           v
-http://IP_WINDOWS:5005/data.json
+http://IP_WINDOWS:5005/data.json  ---> (Escritura automática de windows_ip.txt)
           |
           v
-thermal_watchdog.py
+thermal_watchdog.py (WSL2)
 ```
 
-El servicio HTTP constituye el mecanismo de comunicación entre Windows y WSL2 para la supervisión térmica.
+El servicio HTTP constituye el mecanismo de comunicación desacoplado entre Windows y WSL2 para la supervisión térmica.
 
 ---
 
-## 3.2 Componentes WSL2 Ubuntu
+### 3.2 Componentes WSL2 Ubuntu
 
-En WSL2 se ejecutan todos los componentes relacionados con la inteligencia artificial y el pipeline RAG.
+En WSL2 se ejecutan todos los componentes relacionados con el filtrado del workspace, la extracción de símbolos, el procesamiento vectorial, la inteligencia artificial y el pipeline RAG.
 
 Los módulos principales son:
 
-| Componente | Responsabilidad |
-|------------|-----------------|
-| ingest.py | Procesamiento inicial de documentos |
-| chunk.py | División del contenido en fragmentos |
-| embed.py | Generación de embeddings |
-| symbol_extractor.py | Extracción de información estructural del código |
-| query.py | Coordinación del pipeline RAG |
-| llm_backend.py | Abstracción del backend de inferencia |
-| logger.py | Observabilidad y métricas del pipeline |
-| thermal_watchdog.py | Supervisión térmica independiente |
+| Componente | Versión / Estado | Responsabilidad Principal |
+| :--- | :--- | :--- |
+| **`knowledge_filter.py`** | v1.7 | Filtrado seguro del workspace con detección de `~/rag_workspace` y guardas de borrado `is_safe_to_delete()`. |
+| **`knowledge_policy.conf`** | v1.2 | Reglas de exclusión explícita para carpetas `DatosIniciales` (respaldos) y `Deprecated`. |
+| **`symbols_extractor.py`** | v1.1 | Extractor multi-lenguaje determinista con carga dinámica via `importlib` y escritura atómica. |
+| **`csharp_parser.py`** | v2.1.5 | Parser especializado de C#/.NET MAUI con clasificación explícita de constructores (`is_constructor`). |
+| **`ingest.py`** | Estabilizado | Procesamiento inicial e ingestión documental. |
+| **`chunk.py`** | Estabilizado | Fragmentación semántica del contenido para indexación. |
+| **`embed.py`** | Estabilizado | Generación de embeddings y reconciliación atómica de índices vectoriales. |
+| **`query.py`** | Estabilizado | Coordinación del pipeline RAG, construcción de contexto y delegación a inferencia. |
+| **`llm_backend.py`** | Estabilizado | Capa de abstracción de inferencia (LOCAL: Ollama / CLOUD: OpenRouter). |
+| **`logger.py`** | Estabilizado | Observabilidad, métricas por fase y mecanismo de depuración granular via `log_debug()`. |
+| **`thermal_watchdog.py`** | Estabilizado | Supervisión térmica independiente y detención preventiva de procesos por sobretemperatura. |
 
-Cada módulo posee una responsabilidad claramente definida y puede evolucionar de forma independiente.
+Cada módulo posee una responsabilidad claramente definida y evoluciona de forma independiente.
 
 ---
 
-# 4. Pipeline RAG
+## 4. Pipeline RAG y Extracción KS2
 
-El flujo de consulta implementado actualmente por `query.py` es el siguiente:
+El flujo integral de datos desde la extracción del conocimiento hasta la respuesta del usuario es el siguiente:
 
 ```text
-Usuario
-    |
-    v
-Recepción de la consulta
-    |
-    v
-Detección de errores C# (cuando aplica)
-    |
-    v
-Generación del embedding de consulta
-    |
-    v
-Búsqueda semántica
-    |
-    +-------------------------+
-    |                         |
-    v                         v
-embeddings.jsonl         symbols.jsonl
-    |                         |
-    +------------+------------+
-                 |
-                 v
-Construcción del contexto
-                 |
-                 v
-Construcción del prompt
-                 |
-                 v
-llm_backend.py
-      |
-      +------------------------+
-      |                        |
-      v                        v
-Ollama Local          OpenRouter Cloud
-      |
-      v
-Respuesta
+                        Código Fuente & Documentación (.NET MAUI)
+                                           |
+                                           v
+                              knowledge_filter.py (v1.7)
+                       (Exclusión de Deprecated y respaldos)
+                                           |
+                                           v
+                             symbols_extractor.py (v1.1)
+                            + csharp_parser.py (v2.1.5)
+                                           |
+                                           v
+                                   symbols_raw.jsonl
+                                           |
+                                           v
+                                 embed.py (Sincronización)
+                                           |
+                                           v
+                                   embeddings.jsonl
+                                           |
+                                           v
+Usuario ----> query.py (Recepción de consulta)
+                |
+                v
+       Generación Embedding Consulta (nomic-embed-text)
+                |
+                v
+       Búsqueda Semántica + Selección de Símbolos
+                |
+                v
+       Construcción del Contexto RAG
+                |
+                v
+       Construcción del Prompt Final
+                |
+                v
+         llm_backend.py
+         /                    v              v
+  Ollama Local    OpenRouter Cloud
+        |
+        v
+    Respuesta Final (Registrada por logger.py)
 ```
 
 El pipeline mantiene completamente separadas las etapas de:
 
-- recepción de la consulta;
-- recuperación del conocimiento;
-- construcción del contexto;
-- construcción del prompt;
-- inferencia;
-- observabilidad.
+* filtrado seguro y extracción de símbolos de código;
+* recepción de la consulta y embedding de usuario;
+* recuperación del conocimiento semántico y estructural;
+* construcción del contexto y prompt;
+* inferencia desacoplada;
+* observabilidad y métricas de rendimiento.
 
-En la versión actual, el contenido recuperado desde `embeddings.jsonl` vuelve a incorporarse explícitamente al contexto enviado al modelo de lenguaje.
+El contenido recuperado desde `embeddings.jsonl` y la estructura obtenida de `symbols_raw.jsonl` forman parte activa de la construcción del contexto antes de invocar al modelo de lenguaje.
 
-De esta forma, la recuperación semántica deja de constituir únicamente un mecanismo de búsqueda y pasa a formar parte activa de la generación de respuestas.
-
-Asimismo, `query.py` incorpora mecanismos opcionales de depuración controlados mediante banderas de configuración, permitiendo visualizar y registrar los fragmentos recuperados durante la búsqueda semántica sin modificar la lógica principal del pipeline.
+Asimismo, `query.py` e `ingest.py` incorporan mecanismos de depuración controlados por banderas de configuración (`DEBUG_CHUNKS`), permitiendo inspeccionar el comportamiento interno sin afectar el flujo principal.
 
 ---
 
-# 5. Separación entre recuperación e inferencia
+## 5. Separación entre recuperación e inferencia
 
-Uno de los principales objetivos alcanzados por la arquitectura actual consiste en separar completamente la recuperación del conocimiento de la generación de respuestas.
+Uno de los principales logros de la arquitectura consiste en separar completamente la preparación y recuperación del conocimiento de la generación final de respuestas.
 
-## Recuperación del conocimiento
+### Recuperación y Estructuración del Conocimiento (KS2)
 
-`query.py` mantiene la responsabilidad de:
+El pipeline de WSL2 mantiene la responsabilidad de:
 
-- cargar la base vectorial (`embeddings.jsonl`);
-- generar el embedding de la consulta mediante `nomic-embed-text`;
-- realizar la búsqueda semántica;
-- recuperar contexto arquitectónico desde `symbols.jsonl`;
-- reconstruir el contexto que será enviado al modelo de lenguaje.
+* procesar y filtrar el workspace activo en `~/rag_workspace/<Proyecto>`;
+* analizar el código fuente C# mediante `csharp_parser.py` (v2.1.5) determinando clases, métodos, interfaces y constructores;
+* generar los vectores con `nomic-embed-text` a través de `embed.py`;
+* reconciliar atómicamente el índice vectorial (`embeddings.jsonl`);
+* recuperar fragmentos relevantes y símbolos arquitectónicos durante la consulta.
 
-Todo este proceso permanece completamente local.
+Todo este proceso permanece local y desacoplado del modelo de inferencia.
 
-La base documental utilizada por el pipeline no forma parte de la arquitectura del asistente, sino del proyecto técnico que se desea analizar.
+### Inferencia
 
-En el estado actual del desarrollo, dicha base corresponde a una aplicación .NET MAUI utilizada como caso de uso para validar el funcionamiento del asistente técnico.
+Una vez construido el contexto enriquecido, `query.py` delega completamente la generación de la respuesta a `llm_backend.py`.
 
-## Inferencia
-
-Una vez construido el contexto, `query.py` delega completamente la generación de la respuesta a `llm_backend.py`.
-
-Este módulo constituye una capa de abstracción cuya responsabilidad consiste en seleccionar el backend configurado e invocar el proveedor correspondiente.
+Este módulo constituye una capa de abstracción cuya responsabilidad es seleccionar el proveedor configurado e invocar el modelo correspondiente.
 
 Actualmente se encuentran implementados dos backends:
 
-| Backend | Implementación |
-|----------|----------------|
-| LOCAL | Ollama |
-| CLOUD | OpenRouter |
+| Backend | Proveedor / Motor | Ámbito |
+| :--- | :--- | :--- |
+| **`LOCAL`** | Ollama | Ejecución local desacoplada |
+| **`CLOUD`** | OpenRouter | API de inferencia remota |
 
-Gracias a esta separación, el pipeline RAG no necesita conocer cómo se comunica cada proveedor de inferencia.
-
-La incorporación de nuevos servicios de generación de respuestas puede realizarse ampliando `llm_backend.py`, manteniendo inalterado el resto de la arquitectura.
+Gracias a esta separación, la incorporación de nuevos proveedores de inferencia requiere únicamente ampliar `llm_backend.py`, manteniendo inalterada la arquitectura de recuperación y extracción de conocimiento.
 
 ---
 
-# 6. Observabilidad
+## 6. Observabilidad y Métricas
 
-La observabilidad del sistema se encuentra centralizada en `logger.py`.
+La observabilidad del sistema se centraliza en `logger.py`. Este componente constituye una capa independiente que registra cronológicamente la ejecución y calcula métricas de rendimiento sin intervenir en la lógica funcional.
 
-Este componente constituye una capa independiente cuya única responsabilidad consiste en registrar cronológicamente la ejecución del pipeline y calcular métricas de rendimiento, sin intervenir en la lógica funcional del sistema.
+Cada consulta genera una sesión estructurada de registro en `query_log.txt`, almacenando datos de fecha, backend, modelos utilizados, pregunta del usuario y tiempos por fase.
 
-Cada consulta realizada por el usuario genera una nueva sesión de registro en `query_log.txt`.
-
-La información registrada incluye, entre otros datos:
-
-- fecha y hora de ejecución;
-- backend de inferencia utilizado;
-- modelo de lenguaje seleccionado;
-- modelo de embeddings;
-- modo de operación;
-- pregunta realizada por el usuario;
-- secuencia de eventos del pipeline.
-
-Además, `logger.py` calcula automáticamente las siguientes métricas:
+Las métricas automáticas calculadas son:
 
 | Métrica | Descripción |
-|----------|-------------|
-| EMBEDDING_TIME | Tiempo empleado en generar el embedding de la consulta |
-| SEARCH_TIME | Tiempo empleado en la recuperación semántica |
-| LLM_TIME | Tiempo empleado por el backend de inferencia |
-| PIPELINE_TIME | Tiempo total del pipeline desde la recepción de la consulta hasta la presentación de la respuesta |
+| :--- | :--- |
+| **`EMBEDDING_TIME`** | Tiempo empleado en generar el embedding de la consulta del usuario |
+| **`SEARCH_TIME`** | Tiempo dedicado a la recuperación semántica e inspección de símbolos |
+| **`LLM_TIME`** | Tiempo consumido por el backend de inferencia (Ollama / OpenRouter) |
+| **`PIPELINE_TIME`** | Tiempo total del pipeline desde la entrada del usuario hasta la entrega de la respuesta |
 
-Como complemento a las métricas automáticas, `logger.py` incorpora la función genérica `log_debug()`, que permite registrar información adicional de depuración desde cualquier módulo del proyecto.
-
-Esta funcionalidad facilita el análisis temporal del sistema sin alterar el comportamiento normal del pipeline y resulta especialmente útil durante el desarrollo y la validación de nuevas funcionalidades.
-
-Por ejemplo, `query.py` puede registrar opcionalmente los fragmentos recuperados durante la búsqueda semántica cuando la bandera `DEBUG_CHUNKS` se encuentra habilitada.
-
-La activación de este mecanismo es completamente opcional y no modifica la ejecución normal del sistema.
+Además, `logger.py` expone la función genérica `log_debug()`, utilizada por `query.py`, `symbols_extractor.py` y `embed.py` para registrar eventos técnicos detallados sin alterar la ejecución funcional.
 
 ---
 
-# 7. Supervisión térmica
+## 7. Supervisión térmica independiente
 
-La protección térmica constituye una capa completamente independiente del pipeline RAG.
+La protección térmica constituye una capa complementaria y completamente desacoplada del pipeline RAG. Su ejecución no interrumpe el flujo lógico a menos que se alcancen condiciones de sobretemperatura en el procesador.
 
-Su funcionamiento no depende de `query.py` ni de `logger.py`, lo que mantiene separadas las responsabilidades relacionadas con la inteligencia artificial y la supervisión del hardware.
-
-El componente responsable es:
+El componente principal en WSL2 es:
 
 ```text
 thermal_watchdog.py
 ```
 
-Sus principales responsabilidades son:
+Sus funciones son:
 
-- consultar periódicamente la temperatura del procesador;
-- obtener la información publicada por Windows mediante HTTP;
-- calcular un promedio móvil de temperatura;
-- clasificar el estado térmico del sistema;
-- registrar eventos relacionados con la supervisión;
-- detener preventivamente la ejecución de `query.py` cuando se supera un umbral crítico.
-
-El flujo general es el siguiente:
+* consultar periódicamente la temperatura a `export_temp_server.py`;
+* calcular un promedio móvil de temperatura para evitar falsos positivos;
+* clasificar el estado térmico (Normal, Advertencia, Crítico);
+* registrar eventos térmicos en los logs del sistema;
+* detener preventivamente la ejecución de `query.py` o procesos de embeddings al superar los umbrales configurados.
 
 ```text
-LibreHardwareMonitor
+LibreHardwareMonitor (Windows)
           |
           v
-export_temp_server.py
+export_temp_server.py (Flask 5005)
           |
           v
 HTTP / JSON
           |
           v
-thermal_watchdog.py
+thermal_watchdog.py (WSL2)
           |
           +----------------------+
           |                      |
           v                      v
-
-      Estado normal      Estado crítico
+     Estado Normal         Estado Crítico
           |                      |
-          |                      |
-          |               Finalizar query.py
-          |
-          v
-Continuar ejecución
+          v                      v
+  Continuar Pipeline      Finalizar Procesos Preventivamente
 ```
-
-Esta arquitectura permite mantener la supervisión térmica completamente desacoplada del pipeline RAG y facilita su evolución de manera independiente.
 
 ---
 
-# 8. Comunicación entre Windows y WSL2
+## 8. Comunicación entre Windows y WSL2
 
-La arquitectura requiere un mecanismo de comunicación entre el entorno Windows y WSL2 para acceder a la información térmica del sistema.
+La comunicación entre el entorno Windows (sensores) y WSL2 (pipeline) se realiza mediante un servicio HTTP ligero implementado con Flask.
 
-Esta comunicación se realiza mediante un servicio HTTP ligero.
-
-El flujo es el siguiente:
+El flujo de descubrimiento de IP se resume en:
 
 ```text
-Windows
-    |
-    v
-export_temp_server.py
-    |
-    v
-http://IP_WINDOWS:5005/data.json
-    |
-    v
-WSL2
-    |
-    v
-thermal_watchdog.py
+Windows: export_temp_server.py ──> Escribe windows_ip.txt ──> Publica /data.json
+                                                                    │
+WSL2: thermal_watchdog.py <── Lee windows_ip.txt o Auto-detecta host ┘
 ```
 
-Para simplificar la configuración del entorno, el servicio de Windows genera automáticamente el archivo:
-
-```text
-windows_ip.txt
-```
-
-Este archivo permite que `thermal_watchdog.py` conozca la dirección IP del equipo anfitrión.
-
-Si dicho archivo no se encuentra disponible, el sistema dispone de un mecanismo alternativo para localizar automáticamente la dirección del host Windows.
-
-De esta forma se evita depender de una configuración manual permanente.
+El archivo `windows_ip.txt` permite que WSL2 localice dinámicamente al anfitrión Windows. En caso de ausencia, el sistema cuenta con resolución fallback automática del gateway de WSL2, eliminando la necesidad de IPs estáticas o configuraciones manuales permanentes.
 
 ---
 
-# 9. Principios de diseño
+## 9. Principios de diseño aplicados
 
-La arquitectura actual se ha construido siguiendo varios principios que orientan la evolución del proyecto.
+La arquitectura se rige por los siguientes principios:
 
-## Separación de responsabilidades
-
-Cada componente mantiene una responsabilidad claramente definida.
-
-| Componente | Responsabilidad principal |
-|------------|---------------------------|
-| ingest.py | Procesamiento documental |
-| chunk.py | División del contenido |
-| embed.py | Generación de embeddings |
-| symbol_extractor.py | Extracción de información estructural |
-| query.py | Coordinación completa del pipeline RAG |
-| llm_backend.py | Abstracción del backend de inferencia |
-| logger.py | Observabilidad y métricas |
-| thermal_watchdog.py | Supervisión y protección térmica |
-
-Esta organización facilita el mantenimiento del sistema y reduce el impacto de futuras modificaciones.
+* **Separación de responsabilidades:** Cada componente posee un propósito exclusivo (filtrado en `knowledge_filter.py`, parsing en `csharp_parser.py`, inferencia en `llm_backend.py`).
+* **Bajo acoplamiento:** Los módulos interactúan a través de interfaces estandarizadas y archivos JSONL de intercambio atómico (`symbols_raw.jsonl`, `embeddings.jsonl`).
+* **Recuperación local del conocimiento:** El procesamiento de documentos, extracción de AST/símbolos y vectores se realiza íntegramente en WSL2.
+* **Inferencia desacoplada:** La capa de inferencia es completamente agnóstica a la forma en que el conocimiento fue recuperado o estructurado.
+* **Observabilidad integrada:** Registro transparente de sesiones, latencias por fase e información de depuración via `log_debug()`.
 
 ---
 
-## Bajo acoplamiento
+## 10. Estado actual de la arquitectura
 
-Los componentes interactúan mediante interfaces claramente definidas.
+Al **26 de agosto de 2026**, la arquitectura implementada ofrece:
 
-Por ejemplo:
-
-- `query.py` no conoce cómo se realiza la comunicación con Ollama u OpenRouter.
-- `llm_backend.py` no participa en la recuperación del conocimiento.
-- `logger.py` no modifica el comportamiento funcional del pipeline.
-- `thermal_watchdog.py` no forma parte de la lógica de inferencia.
-
-Esta separación permite modificar un componente sin afectar al resto de la arquitectura.
+* **Pipeline KS2 Validado:** Proceso de filtrado (`knowledge_filter.py` v1.7) y extracción de símbolos (`symbols_extractor.py` v1.1 con `csharp_parser.py` v2.1.5) completamente probado end-to-end con 53 archivos y 57 símbolos extraídos en el proyecto real .NET MAUI.
+* **Sincronización Vectorial Robusta:** Reconciliación atómica en `embed.py` sobre 57 entidades reales leídas (14 sin cambios, 43 modificadas, 6 eliminadas por políticas de exclusión).
+* **Inferencia Híbrida Desacoplada:** Selección dinámica entre Ollama (Local) y OpenRouter (Cloud) via `llm_backend.py`.
+* **Observabilidad Completa:** Métricas automáticas (`EMBEDDING_TIME`, `SEARCH_TIME`, `LLM_TIME`, `PIPELINE_TIME`) y depuración granular con `log_debug()`.
+* **Supervisión Térmica Desacoplada:** Monitoreo activo via `thermal_watchdog.py` y `export_temp_server.py`.
 
 ---
 
-## Recuperación local del conocimiento
+## 11. Consideraciones finales
 
-La recuperación semántica permanece completamente local.
+La arquitectura de **Arquitectura_RAG_Termica** ha alcanzado una madurez estructural donde la plataforma del asistente técnico es completamente independiente del proyecto asistido.
 
-Actualmente el sistema utiliza:
-
-- `embeddings.jsonl` para la recuperación documental;
-- `symbols.jsonl` para incorporar información estructural del código cuando corresponde.
-
-La base documental representa el conocimiento del proyecto técnico asistido y puede sustituirse por la documentación o el código fuente de otro proyecto sin modificar la arquitectura del asistente.
-
----
-
-## Inferencia desacoplada
-
-La generación de respuestas constituye una responsabilidad independiente de la recuperación del conocimiento.
-
-La incorporación de nuevos proveedores de inferencia puede realizarse ampliando `llm_backend.py`, sin modificar el flujo principal implementado por `query.py`.
-
----
-
-## Observabilidad integrada
-
-La observabilidad forma parte del diseño arquitectónico desde el inicio del proyecto.
-
-El registro cronológico de eventos, las métricas automáticas y los mecanismos opcionales de depuración permiten comprender el comportamiento interno del pipeline durante las distintas fases de desarrollo, validación y mantenimiento.
-
----
-
-# 10. Estado actual de la arquitectura
-
-En el estado actual del proyecto, la arquitectura implementada permite:
-
-- ejecutar un pipeline RAG con recuperación completamente local;
-- generar embeddings mediante `nomic-embed-text`;
-- recuperar información semántica desde `embeddings.jsonl`;
-- complementar el contexto mediante `symbols.jsonl`;
-- reconstruir el contexto enviado al modelo de lenguaje;
-- desacoplar completamente la inferencia mediante `llm_backend.py`;
-- seleccionar dinámicamente entre un backend LOCAL (Ollama) y un backend CLOUD (OpenRouter);
-- registrar automáticamente métricas de ejecución mediante `logger.py`;
-- registrar información adicional de depuración mediante `log_debug()`;
-- habilitar o deshabilitar mecanismos de diagnóstico mediante banderas de configuración como `DEBUG_CHUNKS`;
-- supervisar continuamente el estado térmico del sistema mediante `thermal_watchdog.py`.
-
-Actualmente, la base de conocimiento activa corresponde a un proyecto desarrollado con .NET MAUI, utilizado como caso de uso para validar el funcionamiento del asistente técnico.
-
-La arquitectura ha sido diseñada para permitir sustituir dicha base documental por la correspondiente a cualquier otro proyecto, manteniendo inalterado el funcionamiento del pipeline.
-
----
-
-# 11. Consideraciones finales
-
-El objetivo de esta arquitectura no es únicamente ejecutar modelos de lenguaje, sino construir una plataforma reutilizable para el desarrollo de asistentes técnicos especializados.
-
-La separación entre recuperación del conocimiento, construcción del contexto, inferencia, observabilidad y supervisión térmica constituye el principal resultado arquitectónico alcanzado hasta la fecha.
-
-Esta organización permite que el asistente evolucione independientemente del proyecto técnico analizado, facilitando su reutilización con diferentes aplicaciones mediante el simple reemplazo de la base de conocimiento.
-
-En consecuencia, la arquitectura distingue claramente entre:
-
-- el **asistente técnico**, responsable de ejecutar el pipeline RAG y coordinar sus componentes; y
-- el **proyecto asistido**, cuya documentación y código fuente constituyen el conocimiento utilizado para responder las consultas del usuario.
-
-Esta separación constituye la base para la evolución futura del sistema hacia un asistente técnico reutilizable, capaz de adaptarse a distintos proyectos de software sin requerir cambios en su arquitectura interna.
+La separación entre el **asistente técnico** (motor RAG, extractor KS2, supervisión y logger) y el **proyecto asistido** (ubicado en `~/rag_workspace/<Proyecto>`) permite reutilizar este pipeline sobre cualquier otro sistema de software mediante la adición de nuevos parsers o bases documentales, manteniendo intacto el núcleo de la arquitectura.
 

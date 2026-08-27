@@ -1,615 +1,221 @@
-# Mantenimiento y Evolución del Sistema
+# 07 — Mantenimiento y Evolución del Sistema
+
+**Fecha:** 26 de agosto de 2026
+**Versión:** 0.5.1
+**Estado:** Consolidado / Documentación oficial
+**Módulo:** Mantenimiento & Evolución / Operaciones Técnicas
+**Propósito:** Especificar los procedimientos operativos estándar (SOP), el orden recomendado de arranque del sistema híbrido, el mantenimiento del espacio de trabajo y la base de conocimiento (KS2), el diagnóstico de logs y la hoja de ruta evolutiva.
+
+---
+
+> **Resumen ejecutivo:**  
+> La arquitectura modular de **Arquitectura_RAG_Termica** facilita el mantenimiento operativo independiente de cada subsistema. La administración se divide entre los servicios de telemetría en Windows (`E:\Developer\Tools\LibreHardwareMonitor\python`), el motor de scripts del asistente en WSL2 (`~/rag_maui_docs_for_rag/scripts`) y la base de conocimiento aislada del Target Project en `~/rag_workspace/MauiAppGestorMovil`. Este documento consolida el procedimiento de arranque, la regeneración atómica de índices vectoriales y de símbolos (KS2), y la gestión de la deuda técnica hacia la Fase II.
+
+---
 
 ## 1. Introducción
 
-La arquitectura del proyecto fue diseñada siguiendo un enfoque modular, donde cada componente mantiene responsabilidades claramente definidas y un bajo nivel de acoplamiento.
+La arquitectura del proyecto se diseñó bajo un enfoque estrictamente modular, donde cada componente mantiene responsabilidades claramente definidas y un bajo nivel de acoplamiento.
 
-El sistema integra procesamiento documental, recuperación semántica, modelos de lenguaje, supervisión térmica y mecanismos de registro, por lo que las tareas de mantenimiento abarcan tanto el entorno de ejecución como los componentes software que forman el pipeline RAG.
+El sistema integra procesamiento documental, filtrado seguro de workspace (`knowledge_filter.py` v1.7), extracción atómica de símbolos (`symbols_extractor.py` v1.1 / `csharp_parser.py` v2.1.5), recuperación semántica, modelos de lenguaje, supervisión térmica y observabilidad, por lo que las tareas de mantenimiento abarcan tanto el entorno Windows anfitrión como el entorno WSL2 Ubuntu.
 
 Los principales objetivos del mantenimiento son:
 
-- conservar la estabilidad del entorno de ejecución;
-- garantizar la disponibilidad de los servicios requeridos;
-- mantener actualizados los modelos y dependencias;
-- facilitar el diagnóstico mediante registros de ejecución;
-- permitir la incorporación progresiva de nuevas funcionalidades sin afectar la arquitectura existente.
+* conservar la estabilidad del entorno de ejecución híbrido;
+* garantizar la disponibilidad de los servicios requeridos (Flask en Windows, Ollama en WSL2);
+* mantener actualizados los modelos y dependencias en `venv_rag`;
+* facilitar el diagnóstico mediante registros de ejecución (`query_log.txt`, `thermal_watchdog_log.txt`);
+* permitir la incorporación progresiva de nuevas funcionalidades sin afectar la arquitectura existente.
 
 ---
 
-# 2. Organización actual del sistema
+## 2. Organización tripartita del sistema
 
-La arquitectura se distribuye entre dos entornos principales que colaboran entre sí.
-
-## Windows
-
-Ubicación de los componentes de supervisión térmica:
+La arquitectura se distribuye en tres ubicaciones físicas y lógicas bien delimitadas:
 
 ```text
-E:\Developer\Tools\LibreHardwareMonitor\python
-```
-
-Responsabilidades principales:
-
-- acceso a los sensores físicos del equipo;
-- ejecución de LibreHardwareMonitor;
-- publicación de la temperatura mediante Flask;
-- generación del archivo de descubrimiento de IP para WSL2.
-
-Arquitectura simplificada:
-
-```text
-LibreHardwareMonitor
-        │
-        ▼
-export_temp_server.py
-        │
-        ▼
-windows_ip.txt
-```
-
----
-
-## WSL2 Ubuntu
-
-Ubicación del proyecto:
-
-```text
-/home/manuelc/rag_maui_docs_for_rag
-```
-
-Responsabilidades principales:
-
-- ejecución del pipeline RAG;
-- procesamiento documental;
-- generación de embeddings;
-- recuperación semántica;
-- comunicación con el backend de inferencia;
-- supervisión térmica;
-- registro de consultas.
-
-Arquitectura simplificada:
-
-```text
-ingest.py
-      │
-      ▼
-
-output_raw.jsonl
-      │
-      ▼
-
-embed.py
-      │
-      ▼
-
-embeddings.jsonl
-
-symbol_extractor.py
-      │
-      ▼
-
-symbols.jsonl
-
-      │
-      ▼
-
-query.py
-      │
-      ▼
-
-llm_backend.py
-
-      │
- ┌────┴─────┐
- ▼          ▼
-
-LOCAL     CLOUD
-
-Ollama   OpenRouter
-
-logger.py
-
-thermal_watchdog.py
-```
-
-Los componentes auxiliares (`logger.py` y `thermal_watchdog.py`) funcionan de manera desacoplada respecto al flujo principal de inferencia.
-
----
-
-# 3. Mantenimiento operativo
-
-## Inicio recomendado del sistema
-
-Para garantizar el funcionamiento correcto del entorno se recomienda seguir el siguiente orden de ejecución.
-
----
-
-### Paso 1
-
-Iniciar LibreHardwareMonitor en Windows.
-
-Verificar que los sensores se encuentren disponibles y que el archivo JSON pueda consultarse correctamente.
-
----
-
-### Paso 2
-
-Iniciar el servicio de exportación térmica:
-
-```bat
-start_server.bat
-```
-
-Comprobar posteriormente el endpoint:
-
-```text
-http://localhost:5005/data.json
-```
-
-Ejemplo de respuesta:
-
-```json
-{
-  "Text": "CPU Temperature",
-  "Value": 45.0
-}
+                        WINDOWS (Servicios Térmicos)
+            Ruta: E:\Developer\Tools\LibreHardwareMonitor\python
+                                     │
+                                     ├─ LibreHardwareMonitor.exe
+                                     ├─ export_temp_server.py (Flask HTTP :5005)
+                                     ├─ start_server.bat / stop_server.bat
+                                     └─ windows_ip.txt ("192.168.1.37")
+                                             │
+                                             │ HTTP / JSON (:5005)
+                                             ▼
+                              WSL2 UBUNTU (Scripts del Asistente)
+                   Ruta: ~/rag_maui_docs_for_rag/scripts
+                                     │
+         ┌───────────────────────────┼───────────────────────────┐
+         ▼                           ▼                           ▼
+  Entorno Python               Ollama Daemon             thermal_watchdog.py
+   (venv_rag)               (nomic-embed-text)
+         │                           │
+         ▼                           ▼
+   Pipeline RAG              Recuperación Local
+ (KS2 & Parsers)             (embeddings.jsonl)
+         │                           │
+         └─────────────┬─────────────┘
+                       ▼
+           llm_backend.py (LOCAL / CLOUD)
+                       │
+                       ▼
+                             WSL2 UBUNTU (Target Project Workspace)
+                         Ruta: ~/rag_workspace/MauiAppGestorMovil
 ```
 
 ---
 
-### Paso 3
+## 3. Mantenimiento operativo: Secuencia estándar de arranque (SOP)
 
-Iniciar el watchdog térmico desde WSL2:
+Para garantizar la correcta inicialización y evitar fallos de conexión o referencias cruzadas, se recomienda seguir el siguiente orden estricto de ejecución:
 
+### Paso 1: Inicializar la telemetría en Windows
+1. Iniciar `LibreHardwareMonitor.exe` en Windows.
+2. Ejecutar el servidor de exportación térmica navegando a `E:\Developer\Tools\LibreHardwareMonitor\python` y corriendo:
+   ```bat
+   start_server.bat
+   ```
+3. Verificar el endpoint desde el navegador o terminal Windows: `http://localhost:5005/data.json`. Esto genera o actualiza automáticamente `windows_ip.txt` con la IP anfitriona (ej. `192.168.1.37`).
+
+---
+
+### Paso 2: Activar el servicio de modelos de lenguaje (WSL2)
+En la terminal de WSL2 Ubuntu, verificar si el daemon de Ollama está activo:
 ```bash
-python3 thermal_watchdog.py
+ollama list
 ```
-
-Salida esperada (ejemplo):
-
-```text
-🟢 Thermal Watchdog iniciado
-
-🌡 CPU: 45.00°C | Estado: NORMAL
-```
-
----
-
-### Paso 4
-
-Activar el entorno virtual de Python:
-
-```bash
-source venv_rag/bin/activate
-```
-
----
-
-### Paso 5
-
-Iniciar el servicio de Ollama:
-
+Si el servicio no está en ejecución, iniciarlo con:
 ```bash
 ollama serve
 ```
 
-> **Nota:** Si Ollama ya se encuentra ejecutándose como servicio, este paso puede omitirse.
+---
+
+### Paso 3: Activar la supervisión térmica (WSL2)
+En una terminal secundaria de WSL2, navegar al directorio de scripts e iniciar el *watchdog*:
+```bash
+cd ~/rag_maui_docs_for_rag/scripts
+source venv_rag/bin/activate
+python3 thermal_watchdog.py
+```
+*Salida esperada:*
+```text
+📖 IP Windows detectada desde archivo: 192.168.1.37
+🟢 Thermal Watchdog iniciado | Endpoint: http://192.168.1.37:5005/data.json
+🌡 CPU: 45.00°C | Avg(5): 44.80°C | Estado: NORMAL
+```
 
 ---
 
-### Paso 6
+### Paso 4: Ejecutar el pipeline de conocimiento KS2 (Sincronización del Workspace)
+Antes de realizar consultas sobre un proyecto actualizado o recién modificado:
+```bash
+cd ~/rag_maui_docs_for_rag/scripts
+source venv_rag/bin/activate
 
-Ejecutar el pipeline RAG:
+# 1. Filtrar workspace seguro
+python3 knowledge_filter.py
 
+# 2. Extraer símbolos C# estructurados
+python3 symbols_extractor.py
+
+# 3. Generar / Reconciliar índice vectorial de embeddings
+python3 embed.py
+```
+
+---
+
+### Paso 5: Iniciar el motor de consultas RAG
 ```bash
 python3 query.py
 ```
-
-Durante el inicio de la aplicación el usuario selecciona:
-
-- el modo de operación;
-- el backend de inferencia (LOCAL o CLOUD);
-- el modelo correspondiente, según la configuración de la sesión.
+Seleccionar el modo de operación (**DEPURACIÓN**, **ARQUITECTURA** o **DOCUMENTACIÓN**) y el backend de inferencia (**LOCAL** u **OpenRouter CLOUD**).
 
 ---
 
-# 4. Mantenimiento de los datos RAG
+## 4. Mantenimiento de los datos RAG y el workspace (KS2)
 
-La información utilizada durante la recuperación semántica se genera mediante un proceso de indexación documental.
-
-Flujo general:
+La base de conocimiento activa del proyecto objetivo resalta aislada dentro de `~/rag_workspace/MauiAppGestorMovil`.
 
 ```text
-Documentos
-
-      │
-      ▼
-
-ingest.py
-
-      │
-      ▼
-
-output_raw.jsonl
-
-      │
-      ├──────────────┐
-      ▼              ▼
-
-embed.py     symbol_extractor.py
-
-      │              │
-      ▼              ▼
-
-embeddings.jsonl   symbols.jsonl
+~/rag_workspace/MauiAppGestorMovil
+├── knowledge/
+│   ├── embeddings/
+│   │   ├── embeddings.jsonl                          # Índice vectorial activo (57 entidades)
+│   │   ├── embeddings.pre-ADR012-2026-08-12.jsonl   # Respaldo histórico ADR-012
+│   │   └── embeddings.pre-v2.2-2026-08-12.jsonl     # Respaldo histórico v2.2
+│   └── symbols/
+│       └── symbols_raw.jsonl                         # 57 símbolos C# extraídos por KS2
+├── knowledge_policy.conf                             # Políticas v1.2 (Exclusión de Deprecated/Backups)
+└── project.conf                                       # Configuración del workspace (workspace_path)
 ```
 
-Cuando cambia la documentación o el código fuente del proyecto, se recomienda regenerar los índices correspondientes.
-
-Entre las situaciones habituales se encuentran:
-
-- incorporación de nuevos documentos;
-- modificaciones relevantes del código fuente;
-- cambios en la arquitectura del sistema;
-- reorganización del proyecto;
-- incorporación de nuevos módulos o funcionalidades.
-
-Mantener actualizados estos archivos garantiza una recuperación documental coherente con el estado real del proyecto.
+### Cuándo ejecutar la regeneración de índices:
+* **`knowledge_filter.py`:** Al añadir nuevos archivos `.cs`, `.xaml` o cambiar las políticas de exclusión en `knowledge_policy.conf`.
+* **`symbols_extractor.py`:** Al agregar o modificar firmas de métodos, clases o constructores en C#.
+* **`embed.py`:** Se ejecuta tras la extracción de símbolos. Gracias a la lógica atómica del **ADR-012**, `embed.py` detecta qué entidades sufrieron modificaciones (43 en el último ciclo de v2.1.5) y cuáles permanecieron idénticas (14), evitando llamadas redundantes al modelo `nomic-embed-text`.
 
 ---
 
-# 5. Mantenimiento de modelos y backends
+## 5. Diagnóstico de errores y auditoría de logs
 
-La generación de respuestas se encuentra desacoplada del pipeline mediante `llm_backend.py`, permitiendo utilizar distintos proveedores de inferencia.
+El mantenimiento preventivo y correctivo se apoya en dos archivos de auditoría independientes:
 
-## Backend LOCAL
+### 5.1 Diagnóstico del Pipeline RAG (`query_log.txt`)
+Administrado por `logger.py`, registra las sesiones de consulta y desglosa las latencias:
+* `EMBEDDING_TIME`: Generación de vector de la consulta.
+* `SEARCH_TIME`: Búsqueda de similitud coseno sobre `embeddings.jsonl`.
+* `LLM_TIME`: Tiempo consumido por Ollama u OpenRouter.
+* `PIPELINE_TIME`: Duración total end-to-end.
+* **Inspección de Chunks:** Habilitar la bandera `DEBUG_CHUNKS = True` en `query.py` para escribir los fragmentos recuperados en `query_log.txt`.
 
-El backend local utiliza Ollama para ejecutar modelos instalados en el equipo.
-
-Modelos actualmente configurados:
-
-| Función | Modelo |
-|----------|--------|
-| Embeddings | `nomic-embed-text` |
-| Depuración | `qwen2.5-coder:1.5b` |
-| Arquitectura | `llama3.2:3b` |
-| Documentación | `llama3.2:3b` |
-
-Las actualizaciones de modelos deben evaluarse considerando aspectos como:
-
-- memoria disponible;
-- carga del procesador;
-- temperatura alcanzada;
-- velocidad de respuesta;
-- calidad de las respuestas obtenidas.
-
-En equipos con recursos limitados, un modelo de mayor tamaño no siempre representa una mejora práctica.
+### 5.2 Diagnóstico Térmico (`thermal_watchdog_log.txt`)
+Administrado por `thermal_watchdog.py`, permite auditar:
+* picos de temperatura del procesador anfitrión;
+* cierres preventivos ejecutados mediante `pkill -f query.py`;
+* fallos de red o desconexiones con el servicio Flask en Windows (`5005`).
 
 ---
 
-## Backend CLOUD
+## 6. Gestión de respaldos y repositorio Git
 
-El backend cloud utiliza OpenRouter como proveedor de inferencia remota.
+Para garantizar la integridad ante fallos de disco o refactorizaciones de código:
 
-Su mantenimiento incluye, entre otros aspectos:
-
-- verificar la disponibilidad de la API Key;
-- comprobar la conectividad con el servicio;
-- validar el modelo configurado para cada sesión;
-- revisar posibles cambios en la configuración del proveedor.
-
-La utilización de este backend permite mantener el mismo flujo RAG sin depender exclusivamente de la capacidad de procesamiento del hardware local.
+1. **Estructura para Git (Windows Host):** Sincronizar manualmente los scripts de WSL2 (`scripts/`), la telemetría de Windows (`LibreHardwareMonitor/python/`) y la documentación (`docs/`) dentro de la carpeta clonada en Windows:
+   ```text
+   E:\Developer\IA\Arquitectura_RAG_Termica
+   ```
+2. **Archivos Excluidos (`.gitignore`):** Verificar que archivos temporales (`query_log.txt`, `thermal_watchdog_log.txt`, `windows_ip.txt`), entornos virtuales (`venv_rag/`) y cachés de Python (`__pycache__/`) permanezcan ignorados por Git.
+3. **Respaldo de la Base Vectorial:** Conservar los archivos `.jsonl` respaldados en `knowledge/embeddings/` (ej. `embeddings.pre-ADR012-2026-08-12.jsonl`) para acelerar la restauración sin re-vectorizar el código.
 
 ---
 
-## Evolución de los modelos
+## 7. Evolución prevista y Hoja de Ruta (Deuda Técnica)
 
-La incorporación de nuevos modelos debe realizarse procurando mantener la compatibilidad con la arquitectura existente.
-
-Se recomienda evaluar previamente:
-
-- calidad de las respuestas;
-- consumo de recursos;
-- compatibilidad con el hardware disponible;
-- impacto sobre la temperatura del sistema;
-- tiempo de respuesta durante las consultas.
-
-La separación entre `query.py` y `llm_backend.py` facilita la incorporación de nuevos modelos o proveedores de inferencia con un impacto mínimo sobre el resto del sistema.
-
----
-
-# 6. Diagnóstico y registros
-
-La arquitectura incorpora mecanismos de registro que facilitan el análisis del comportamiento del sistema y el diagnóstico de incidencias.
-
-## Registros de supervisión térmica
-
-Generados por:
+El sistema evoluciona de forma incremental conservando la paridad entre arquitectura y código. Las siguientes etapas establecen la prioridad inmediata post-commit:
 
 ```text
-thermal_watchdog.py
+ [ Estado Actual v0.5.1 ] ──> [ Commit GitHub ] ──> [ Deuda Técnica v0.5.2 ] ──> [ Fase II - v0.6 ]
+   KS2 Congelado & Probad.       Subir cambios         - Consumo de símbolos       Architecture Orientada
+   (57 símbolos C# / 57 vect.)   a repositorio           ricos en query.py          a Construcción de Contexto
+                                                       - Validar Parser CSS        (Knowledge Packages)
 ```
 
-Estos registros permiten analizar información como:
-
-- temperatura del procesador;
-- promedio móvil utilizado para la toma de decisiones;
-- estado térmico detectado;
-- eventos críticos;
-- acciones de protección ejecutadas.
-
-La información queda almacenada en un archivo de registro para su posterior análisis.
+1. **Inmediato Post-Commit (v0.5.2):**
+   * **Integración Rica en `query.py`:** Adaptar `query.py` para aprovechar la rica estructura de constructores y metadatos extraídos por `symbols_extractor.py` v1.1 y `csharp_parser.py` v2.1.5.
+   * **Validación de Parsers Secundarios:** Incorporar y probar end-to-end parsers de formatos complementarios (como el parser CSS).
+2. **Evolución a Fase II (Versión 0.6):**
+   * Transición a una **Arquitectura Orientada a Construcción de Contexto**, introduciendo contratos de datos explicitados (`IntentSpec`, `Knowledge Package`) y *Context Pruners* para optimizar la ventana de contexto del LLM.
 
 ---
 
-## Registros del pipeline RAG
+## 8. Estado actual de mantenimiento
 
-Generados por:
+Al **26 de agosto de 2026**, el procedimiento de mantenimiento y la estructura del sistema se encuentran consolidados:
+* **Entornos Alineados:** Windows (`5005`), WSL2 (`~/rag_maui_docs_for_rag/scripts`) y Target Project (`~/rag_workspace/MauiAppGestorMovil`) operando sin interferencias.
+* **Ciclo KS2 Congelado:** Sincronización vectorial atómica probada en `embed.py` sobre 57 entidades C#.
+* **Logs Operativos:** Auditoría transparente en `query_log.txt` y `thermal_watchdog_log.txt`.
+* **Ruta de Versiones Clara:** Repositorio v0.5.1 listo para sincronización prioritaria en GitHub.
 
-```text
-logger.py
-```
-
-Durante cada consulta se registran eventos representativos del flujo de ejecución.
-
-Ejemplo conceptual:
-
-```text
-SESSION_START
-
-MODE_SELECTED
-
-INPUT_RECEIVED
-
-EMBEDDING_START
-
-SEARCH_START
-
-LLM_START
-
-LLM_DONE
-
-SESSION_END
-```
-
-Dependiendo de la configuración de la aplicación, los registros pueden incluir información adicional como:
-
-- modo de operación seleccionado;
-- backend utilizado;
-- modelo empleado;
-- tiempos de ejecución;
-- temperatura registrada;
-- eventos de interrupción.
-
-Estos registros facilitan el análisis del rendimiento del sistema y la identificación de posibles cuellos de botella.
-
----
-
-# 7. Copias de seguridad
-
-Se recomienda realizar copias de seguridad periódicas de los componentes más importantes del proyecto.
-
-## Código fuente
-
-Directorio principal:
-
-```text
-scripts/
-```
-
-Incluye, entre otros:
-
-- ingest.py
-- chunk.py
-- embed.py
-- symbol_extractor.py
-- query.py
-- llm_backend.py
-- logger.py
-- thermal_watchdog.py
-
----
-
-## Índices documentales
-
-Archivos generados durante el procesamiento:
-
-```text
-embeddings.jsonl
-
-symbols.jsonl
-```
-
-Estos archivos pueden regenerarse, pero conservar una copia evita repetir procesos de indexación cuando la documentación no ha cambiado.
-
----
-
-## Documentación técnica
-
-Directorio:
-
-```text
-docs/
-```
-
-Se recomienda mantener sincronizada la documentación con la evolución del código para evitar inconsistencias entre ambos.
-
----
-
-## Configuración del entorno
-
-Conviene conservar la configuración relacionada con:
-
-- entorno virtual de Python;
-- modelos instalados en Ollama;
-- configuración del backend CLOUD;
-- archivos de configuración (`.env`);
-- scripts auxiliares utilizados durante el desarrollo.
-
----
-# 8. Evolución prevista
-
-La arquitectura actual fue diseñada para facilitar la incorporación gradual de nuevas capacidades.
-
-Las siguientes mejoras representan posibles líneas de evolución y no forman parte de la implementación actual.
-
----
-
-## Mayor observabilidad
-
-Entre las posibles ampliaciones se encuentran:
-
-- utilización del procesador;
-- consumo de memoria RAM;
-- carga del sistema;
-- tiempos de respuesta;
-- métricas de recuperación documental;
-- métricas de inferencia.
-
----
-
-## Supervisión térmica ampliada
-
-Actualmente la supervisión se centra principalmente en la temperatura del procesador.
-
-En futuras versiones podrían incorporarse otros indicadores como:
-
-```text
-CPU
-
- │
-
- ├── Temperatura
-
- ├── Utilización
-
- ├── Frecuencia
-
- └── Carga sostenida
-```
-
----
-
-## Gestión dinámica de modelos
-
-Una posible evolución consiste en seleccionar automáticamente el backend o el modelo más adecuado según las condiciones del sistema.
-
-Ejemplo conceptual:
-
-```text
-Carga baja
-      │
-      ▼
-Modelo de mayor capacidad
-
-Carga elevada
-      │
-      ▼
-Modelo ligero o backend CLOUD
-```
-
----
-
-## Automatización del entorno
-
-Entre las posibles mejoras futuras se encuentran:
-
-- inicio automático de servicios;
-- comprobación de dependencias;
-- verificación del estado del entorno;
-- administración automática de modelos;
-- limpieza de recursos al finalizar una sesión.
-
----
-
-## Herramientas de administración
-
-Otra posible evolución consiste en desarrollar una interfaz que permita supervisar el estado general del sistema.
-
-Ejemplo:
-
-```text
-Dashboard
-
-Temperatura CPU
-
-Estado del pipeline
-
-Backend activo
-
-Modelo utilizado
-
-Consultas realizadas
-
-Eventos registrados
-```
-
----
-
-# 9. Consideraciones para hardware limitado
-
-La arquitectura fue desarrollada teniendo en cuenta las características del equipo utilizado durante el proyecto.
-
-Por este motivo se adoptaron diversas estrategias orientadas a mejorar la estabilidad del sistema:
-
-- utilización de modelos ligeros para ejecución local;
-- separación entre Windows y WSL2;
-- supervisión térmica desacoplada;
-- registro detallado de eventos;
-- posibilidad de utilizar un backend CLOUD para reducir la carga local.
-
-Estas decisiones permitieron desarrollar y evaluar el sistema sin requerir hardware especializado para inteligencia artificial.
-
----
-
-# 10. Estado actual del proyecto
-
-En su estado actual, el proyecto dispone de una arquitectura funcional compuesta por:
-
-```text
-Pipeline RAG
-
-        │
-
-        ▼
-
-Recuperación semántica
-
-        │
-
-        ▼
-
-llm_backend.py
-
-        │
-
- ┌──────┴──────┐
-
- ▼             ▼
-
-LOCAL       CLOUD
-
-        │
-
-        ▼
-
-Supervisión térmica
-
-        │
-
-        ▼
-
-Registro de ejecución
-```
-
-La arquitectura continúa en evolución y sirve como plataforma experimental para el estudio de técnicas de recuperación documental, inferencia con modelos de lenguaje y supervisión de recursos en hardware limitado.
-
----
-
-# 11. Conclusión
-
-La organización modular del proyecto facilita el mantenimiento y la evolución de cada uno de sus componentes de forma independiente.
-
-La separación entre el procesamiento documental, la recuperación semántica, la inferencia mediante modelos de lenguaje y la supervisión térmica permite incorporar mejoras progresivas sin modificar la estructura general del sistema.
-
-En conjunto, la arquitectura proporciona una base sólida para continuar experimentando con soluciones RAG locales e híbridas, manteniendo la coherencia entre la implementación, la documentación técnica y los objetivos de investigación del proyecto.

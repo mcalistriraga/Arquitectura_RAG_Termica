@@ -1,431 +1,495 @@
-# Arquitectura RAG Híbrida con Supervisión Térmica
+# Arquitectura RAG Experimental para Proyectos de Software
 
-> Arquitectura experimental para la construcción de asistentes técnicos basados en **Retrieval-Augmented Generation (RAG)**, con recuperación local del conocimiento, inferencia desacoplada y supervisión térmica del hardware.
-
----
-
-# Descripción
-
-**Arquitectura_RAG_Termica** es un proyecto experimental cuyo objetivo es diseñar e implementar una arquitectura RAG modular, desacoplada y documentada que sirva como base para asistentes técnicos especializados.
-
-El proyecto explora la integración de distintas disciplinas:
-
-- Inteligencia Artificial aplicada mediante modelos de lenguaje (LLM).
-- Recuperación Semántica de Información (RAG).
-- Arquitectura de software orientada al desacoplamiento de componentes.
-- Observabilidad del pipeline mediante registro de eventos y métricas.
-- Supervisión térmica para la protección del hardware durante la ejecución de cargas intensivas.
-
-Aunque inicialmente fue concebido para ejecutar modelos locales mediante Ollama, la arquitectura ha evolucionado hacia un enfoque híbrido en el que la recuperación del conocimiento permanece local mientras la inferencia puede realizarse utilizando distintos proveedores sin modificar el núcleo del sistema.
-
-El objetivo a largo plazo es disponer de una plataforma experimental que facilite el estudio, evaluación y evolución de arquitecturas RAG sobre hardware de propósito general, manteniendo una documentación técnica coherente con la implementación real.
+> Arquitectura experimental orientada a mejorar la construcción del contexto para consultas sobre proyectos de software, manteniendo desacopladas la recuperación del conocimiento, la construcción del contexto, la inferencia, la observabilidad y la supervisión térmica.
 
 ---
 
-# Objetivos del proyecto
+## 1. Descripción
 
-Los principales objetivos del proyecto son:
+**Arquitectura_RAG_Termica** es un proyecto experimental orientado al diseño y evolución de una arquitectura **RAG (Retrieval-Augmented Generation)** para consultas relacionadas con proyectos de software.
 
-- Construir una arquitectura RAG limpia, modular y mantenible.
-- Mantener desacopladas las fases de recuperación e inferencia.
-- Facilitar la incorporación de nuevos proveedores de modelos de lenguaje.
-- Registrar métricas relevantes durante cada consulta.
-- Supervisar el comportamiento térmico del hardware.
-- Proteger el sistema frente a condiciones de sobretemperatura.
-- Mantener una documentación técnica alineada con la implementación.
-- Servir como plataforma de experimentación para futuras investigaciones.
+El objetivo principal no consiste únicamente en recuperar fragmentos mediante búsqueda semántica, sino en investigar cómo diferentes fuentes de conocimiento pueden recuperarse, organizarse e integrarse para construir un contexto más preciso, coherente y útil antes de la etapa de inferencia.
 
-El proyecto prioriza la estabilidad arquitectónica, la mantenibilidad y la trazabilidad sobre la incorporación acelerada de nuevas funcionalidades.
+La arquitectura mantiene separadas las responsabilidades de:
 
----
+* adquisición y preparación del conocimiento;
+* recuperación semántica;
+* extracción de información estructurada del código;
+* construcción del contexto;
+* inferencia mediante modelos de lenguaje;
+* observabilidad del pipeline;
+* supervisión térmica del entorno de ejecución.
 
-# Principios de diseño
+Esta separación permite evolucionar cada componente de forma independiente y experimentar con nuevas estrategias sin modificar innecesariamente el núcleo del sistema.
 
-La arquitectura fue desarrollada siguiendo una serie de principios que guían su evolución.
+El proyecto integra distintas áreas de conocimiento:
 
-## Bajo acoplamiento
+* Inteligencia Artificial aplicada mediante modelos de lenguaje.
+* Recuperación Semántica de Información.
+* Arquitecturas RAG.
+* Construcción y organización del contexto para inferencia.
+* Extracción heurística de información estructurada desde código fuente.
+* Arquitectura de software orientada al bajo acoplamiento y alta cohesión.
+* Observabilidad mediante registros, métricas y mecanismos de depuración.
+* Supervisión térmica para proteger el hardware durante cargas intensivas.
 
-Cada componente mantiene responsabilidades claramente definidas y conoce únicamente la información necesaria para realizar su función.
+Aunque inicialmente el proyecto estuvo orientado principalmente a la ejecución local de modelos mediante Ollama, la arquitectura evolucionó hacia un enfoque híbrido en el que la recuperación del conocimiento permanece desacoplada de la inferencia.
 
-## Alta cohesión
+Actualmente, la inferencia puede realizarse mediante diferentes backends sin modificar la lógica principal de recuperación y construcción del contexto.
 
-Cada módulo implementa una única responsabilidad principal.
-
-## Separación de responsabilidades
-
-La recuperación documental, la inferencia, la supervisión térmica y el registro de eventos se implementan como componentes independientes.
-
-## Evolución incremental
-
-Las nuevas funcionalidades se incorporan mediante pequeños cambios controlados, procurando preservar la estabilidad de la arquitectura existente.
-
-## Observabilidad
-
-El comportamiento del sistema puede analizarse mediante registros cronológicos y métricas de ejecución.
-
-## Documentación como parte del desarrollo
-
-Cada modificación significativa de la arquitectura se refleja en la documentación técnica del proyecto.
+El objetivo a largo plazo es evolucionar progresivamente esta arquitectura hacia un **asistente técnico capaz de conocer y utilizar información actualizada de un proyecto de software para colaborar con el desarrollador durante su ciclo de vida**.
 
 ---
 
-# Arquitectura general
+## 2. Objetivos del proyecto
 
-Actualmente el sistema se distribuye entre dos entornos de ejecución que colaboran entre sí.
+Los principales objetivos son:
+
+* Diseñar una arquitectura RAG modular y desacoplada para consultas sobre proyectos de software.
+* Mejorar progresivamente la calidad del contexto entregado a los modelos de lenguaje.
+* Mantener separadas la recuperación del conocimiento y la generación de respuestas.
+* Integrar diferentes fuentes de conocimiento del proyecto.
+* Incorporar información estructurada procedente del código fuente.
+* Facilitar la evolución del pipeline mediante componentes independientes.
+* Evaluar diferentes estrategias de recuperación y construcción de contexto.
+* Permitir el uso de distintos modelos y proveedores de inferencia.
+* Registrar métricas y eventos relevantes durante la ejecución.
+* Supervisar el comportamiento térmico del hardware durante cargas intensivas.
+* Mantener coherencia entre código, documentación técnica y decisiones arquitectónicas.
+* Servir como plataforma experimental para estudiar arquitecturas RAG orientadas al desarrollo y mantenimiento de software.
+
+El proyecto prioriza:
+
+* calidad del contexto;
+* estabilidad arquitectónica;
+* mantenibilidad;
+* observabilidad;
+* trazabilidad;
+* evolución incremental.
+
+No se busca incorporar funcionalidades por anticipación, sino validar cada cambio antes de consolidarlo.
+
+---
+
+## 3. Principios de diseño
+
+La evolución del proyecto se guía por los siguientes principios.
+
+### Bajo acoplamiento
+
+Cada componente mantiene responsabilidades claramente delimitadas y depende únicamente de la información necesaria para cumplir su función.
+
+### Alta cohesión
+
+Cada módulo debe concentrarse en una responsabilidad principal.
+
+### Separación de responsabilidades
+
+La adquisición del conocimiento, recuperación, construcción del contexto, inferencia, observabilidad y supervisión térmica se mantienen como responsabilidades independientes.
+
+### Evolución incremental
+
+Las nuevas capacidades se incorporan mediante cambios pequeños y controlados.
+
+El enfoque general es:
 
 ```text
-                     EQUIPO FÍSICO
-
-      +---------------------------------------------------+
-
-          Windows                           WSL2 Ubuntu
-
-      LibreHardwareMonitor              Pipeline RAG
-
-      export_temp_server.py             ingest.py
-                                        embed.py
-                                        symbol_extractor.py
-                                        query.py
-                                        llm_backend.py
-                                        logger.py
-                                        thermal_watchdog.py
-
-                │
-                │ HTTP (JSON)
-                ▼
-
-      Supervisión térmica desacoplada
+Caso real
+    ↓
+Reproducción mínima
+    ↓
+Cambio mínimo
+    ↓
+Prueba de regresión
+    ↓
+Validación
+    ↓
+Consolidación
 ```
 
-Cada entorno mantiene responsabilidades claramente diferenciadas.
+### Sin cambios especulativos
+
+No se incorporan mecanismos complejos únicamente porque puedan resultar útiles en el futuro.
+
+Antes de introducir nuevas capas o componentes se busca obtener evidencia mediante pruebas y comportamiento real del sistema.
+
+### Observabilidad
+
+El comportamiento del pipeline debe poder analizarse mediante:
+
+* registros cronológicos;
+* métricas de tiempo;
+* eventos;
+* información de depuración;
+* pruebas documentadas.
+
+### Documentación como parte del desarrollo
+
+Las decisiones arquitectónicas relevantes deben conservar su contexto y justificación mediante documentación y, cuando corresponda, mediante **Architecture Decision Records (ADR)**.
 
 ---
 
-# Windows
+## 4. Arquitectura general
+
+El sistema se distribuye entre dos entornos principales:
+
+```text
+                    EQUIPO FÍSICO
+
+┌─────────────────────────┬─────────────────────────────┐
+│         Windows         │         WSL2 Ubuntu         │
+│                         │                             │
+│ LibreHardwareMonitor    │ Pipeline RAG                │
+│                         │                             │
+│ export_temp_server.py   │ ingest.py                   │
+│                         │ chunk.py                    │
+│                         │ embed.py                    │
+│                         │ symbols_extractor.py        │
+│                         │ query.py                    │
+│                         │ llm_backend.py              │
+│                         │ logger.py                   │
+│                         │ thermal_watchdog.py         │
+└────────────┬────────────┴─────────────────────────────┘
+             │
+             │ HTTP + JSON
+             ▼
+      Supervisión térmica
+```
+
+Cada entorno mantiene responsabilidades diferenciadas.
+
+---
+
+## 5. Entorno Windows
 
 El entorno Windows concentra los componentes relacionados con la adquisición de información del hardware.
 
-Responsabilidades principales:
+### Responsabilidades principales
 
-- acceso a los sensores físicos;
-- ejecución de LibreHardwareMonitor;
-- publicación simplificada de la temperatura mediante Flask;
-- generación automática del archivo `windows_ip.txt`;
-- suministro de información térmica al entorno WSL2.
+* acceso a los sensores físicos;
+* ejecución de LibreHardwareMonitor;
+* publicación de información térmica;
+* comunicación con el entorno WSL2;
+* suministro de datos para la supervisión térmica.
 
-Componentes principales:
+El flujo simplificado es:
 
 ```text
 LibreHardwareMonitor
-
         │
-
         ▼
-
 export_temp_server.py
-
         │
-
         ▼
-
-windows_ip.txt
-
+HTTP + JSON
         │
-
         ▼
-
-HTTP JSON
+WSL2 / thermal_watchdog.py
 ```
 
-El pipeline RAG no interactúa directamente con los sensores físicos, sino únicamente con la información publicada por este servicio.
+El pipeline RAG no interactúa directamente con los sensores físicos.
+
+La información térmica se obtiene mediante un servicio desacoplado que actúa como puente entre Windows y WSL2.
 
 ---
 
-# WSL2 Ubuntu
+## 6. Entorno WSL2 Ubuntu
 
-El entorno WSL2 concentra todos los componentes relacionados con el procesamiento documental y la inteligencia artificial.
+El entorno WSL2 concentra los componentes relacionados con el procesamiento del conocimiento y la ejecución del pipeline RAG.
 
-Responsabilidades principales:
+Entre sus responsabilidades se encuentran:
 
-- procesamiento de documentos;
-- generación de embeddings;
-- extracción de símbolos arquitectónicos;
-- recuperación semántica;
-- construcción del contexto RAG;
-- coordinación del pipeline RAG;
-- selección del backend de inferencia;
-- registro de eventos y métricas;
-- supervisión térmica.
+* procesamiento documental;
+* fragmentación de contenido;
+* generación de embeddings;
+* extracción de símbolos estructurados;
+* recuperación semántica;
+* construcción del contexto;
+* coordinación del proceso de consulta;
+* selección del backend de inferencia;
+* registro de eventos y métricas;
+* supervisión térmica.
 
-Arquitectura simplificada:
+Una representación simplificada es:
 
 ```text
-Documentos
-
-      │
-
-      ▼
-
-ingest.py
-
-      │
-
-      ▼
-
-output_raw.jsonl
-
-      │
-
-      ├──────────────┐
-
-      ▼              ▼
-
-embed.py     symbol_extractor.py
-
-      │              │
-
-      ▼              ▼
-
-embeddings.jsonl   symbols.jsonl
-
-          │
-
-          ▼
-
-       query.py
-
-          │
-
-          ▼
-
-    llm_backend.py
-
-     ┌─────────────┐
-
-     ▼             ▼
-
-  LOCAL         CLOUD
-
- Ollama      OpenRouter
-
-          │
-
-          ▼
-
-      logger.py
-
-thermal_watchdog.py
+Fuentes de conocimiento
+        │
+        ▼
+Procesamiento / ingestión
+        │
+        ├───────────────────────┐
+        ▼                       ▼
+   Recuperación textual    Extracción de símbolos
+        │                       │
+        ▼                       ▼
+  embeddings.jsonl       índice estructurado
+        │                       │
+        └───────────┬───────────┘
+                    ▼
+                 query.py
+                    │
+                    ▼
+              llm_backend.py
+                    │
+            ┌───────┴────────┐
+            ▼                ▼
+          LOCAL            CLOUD
+         Ollama         OpenRouter
+                    │
+                    ▼
+                 Respuesta
 ```
 
-Los componentes auxiliares (`logger.py` y `thermal_watchdog.py`) permanecen desacoplados del flujo principal de inferencia, permitiendo registrar información, métricas y supervisar el sistema sin modificar la lógica funcional del pipeline RAG.
+Los componentes de observabilidad y supervisión permanecen desacoplados del flujo funcional principal.
 
 ---
-# Pipeline RAG
 
-El flujo de una consulta sigue una arquitectura desacoplada en la que la recuperación del conocimiento permanece independiente del mecanismo de inferencia.
+## 7. Pipeline RAG
 
-A partir de la versión 1.5, el pipeline no solo recupera información relevante, sino que construye explícitamente el contexto RAG que será enviado al modelo de lenguaje junto con el contexto arquitectónico obtenido mediante `symbols.jsonl`.
+El pipeline está diseñado para separar claramente:
+
+1. la recuperación del conocimiento;
+2. la organización y construcción del contexto;
+3. la inferencia.
+
+El flujo general de una consulta puede representarse de la siguiente manera:
 
 ```text
 Usuario
-
-    │
-
-    ▼
-
+   │
+   ▼
 Recepción de la consulta
-
-    │
-
-    ▼
-
+   │
+   ▼
 Generación del embedding
-(nomic-embed-text)
-
-    │
-
-    ▼
-
-Búsqueda semántica
-(embeddings.jsonl)
-
-    │
-
-    ▼
-
-Construcción del contexto RAG
-
-    │
-
-    ▼
-
-Recuperación del contexto arquitectónico
-(symbols.jsonl)
-
-    │
-
-    ▼
-
-Construcción del prompt
-
-    │
-
-    ▼
-
-llm_backend.py
-
-    │
-
- ┌───┴──────────┐
-
- ▼              ▼
-
-LOCAL        CLOUD
-
-Ollama    OpenRouter
-
-    │
-
-    ▼
-
-Respuesta
+   │
+   ▼
+Recuperación de conocimiento
+   │
+   ├──────────────────────────┐
+   │                          │
+   ▼                          ▼
+Búsqueda semántica      Información estructurada
+   │                          │
+   └──────────────┬───────────┘
+                  ▼
+       Construcción del contexto
+                  │
+                  ▼
+       Construcción del prompt
+                  │
+                  ▼
+           llm_backend.py
+                  │
+          ┌───────┴───────┐
+          ▼               ▼
+        LOCAL           CLOUD
+       Ollama       OpenRouter
+                  │
+                  ▼
+               Respuesta
 ```
 
-Este flujo permanece invariable independientemente del backend de inferencia seleccionado. La única etapa que cambia es el proveedor encargado de generar la respuesta.
+La arquitectura permite que nuevas fuentes de conocimiento puedan incorporarse progresivamente sin acoplarlas directamente a un proveedor de inferencia.
 
 ---
 
-# Separación entre recuperación e inferencia
+## 8. Knowledge Sources y conocimiento estructurado
 
-Uno de los principios arquitectónicos fundamentales del proyecto consiste en separar completamente la recuperación del conocimiento de la generación de respuestas.
+La arquitectura evoluciona hacia un modelo en el que diferentes tipos de conocimiento pueden constituir fuentes independientes.
 
-Actualmente:
+Entre las capacidades desarrolladas se encuentra la extracción de información estructurada desde código C#.
 
-- la recuperación RAG se ejecuta íntegramente de forma local;
-- los embeddings se generan mediante `nomic-embed-text`;
-- la búsqueda semántica recupera los fragmentos más relevantes desde `embeddings.jsonl`;
-- `query.py` construye el contexto RAG utilizando dichos fragmentos;
-- el contexto arquitectónico se obtiene mediante `symbols.jsonl`;
-- ambos contextos se integran antes de construir el prompt final;
-- la inferencia se delega completamente a `llm_backend.py`.
+El componente principal es:
 
-Gracias a esta organización:
+```text
+symbols_extractor.py
+        │
+        ▼
+parsers/
+        │
+        └── csharp_parser.py
+```
 
-- `query.py` no depende de un proveedor específico de inferencia;
-- `llm_backend.py` desconoce cómo fue recuperado el conocimiento;
-- la recuperación documental permanece independiente del modelo utilizado para responder;
-- es posible incorporar nuevos proveedores realizando cambios únicamente en la capa de inferencia.
+El parser C# utiliza un enfoque heurístico ligero en Python, sin incorporar dependencias externas ni utilizar un AST basado en Roslyn.
 
-Actualmente existen dos backends implementados:
+Su objetivo es extraer información estructurada de entidades como:
 
-- **LOCAL**, basado en Ollama.
-- **CLOUD**, basado en OpenRouter.
+* `class`;
+* `interface`;
+* `struct`;
+* `record`;
+* `record class`;
+* `record struct`;
+* `enum`.
 
-La incorporación de nuevos proveedores únicamente requiere ampliar `llm_backend.py`, manteniendo intacto el resto del pipeline.
+También permite obtener información sobre:
+
+* namespace;
+* modificadores;
+* herencia;
+* interfaces implementadas;
+* métodos;
+* parámetros;
+* propiedades.
+
+La salida mantiene un contrato estructurado destinado a preservar la información necesaria para su utilización posterior como fuente de conocimiento.
+
+El desarrollo de este componente sigue una metodología estricta de validación mediante casos reproducibles y pruebas de regresión.
+
+La versión candidata **v2.1.4** del parser superó la batería sintética de validación disponible antes de su consolidación.
 
 ---
 
-# Supervisión térmica
+## 9. Separación entre recuperación e inferencia
 
-El proyecto incorpora un sistema independiente de supervisión térmica destinado a proteger el hardware durante la ejecución de tareas intensivas.
+Uno de los principios fundamentales de la arquitectura consiste en desacoplar completamente la recuperación del conocimiento de la generación de respuestas.
 
-Su funcionamiento permanece completamente desacoplado del pipeline RAG.
+La responsabilidad general de los componentes es:
+
+```text
+Fuentes de conocimiento
+        │
+        ▼
+Recuperación y organización
+        │
+        ▼
+Construcción del contexto
+        │
+        ▼
+query.py
+        │
+        ▼
+llm_backend.py
+        │
+        ├── LOCAL
+        │      └── Ollama
+        │
+        └── CLOUD
+               └── OpenRouter
+```
+
+Esta organización permite que:
+
+* `query.py` no dependa directamente de un proveedor específico;
+* la recuperación permanezca independiente del modelo utilizado;
+* `llm_backend.py` no necesite conocer cómo fue construido el contexto;
+* nuevos proveedores puedan incorporarse sin modificar el núcleo de recuperación.
+
+Actualmente, la arquitectura contempla dos modalidades principales de inferencia:
+
+* **LOCAL**, mediante Ollama;
+* **CLOUD**, mediante OpenRouter.
+
+---
+
+## 10. Supervisión térmica
+
+El proyecto incorpora un sistema independiente de supervisión térmica destinado a proteger el hardware durante la ejecución de cargas intensivas.
+
+El flujo simplificado es:
 
 ```text
 LibreHardwareMonitor
-
         │
-
         ▼
-
 export_temp_server.py
-
         │
-
         ▼
-
-HTTP JSON
-
+HTTP + JSON
         │
-
         ▼
-
 thermal_watchdog.py
-
         │
-
         ▼
-
-Supervisión del CPU
-
+Evaluación térmica
         │
-
-        ▼
-
-Protección preventiva
+        ├── Normal
+        ├── Advertencia
+        └── Crítico
+                 │
+                 ▼
+       Protección preventiva
 ```
 
-Entre sus funciones principales se encuentran:
+Entre sus funciones se encuentran:
 
-- lectura periódica de la temperatura;
-- cálculo del promedio móvil;
-- clasificación del estado térmico;
-- registro de eventos críticos;
-- detención preventiva de procesos cuando se alcanzan los umbrales configurados;
-- recuperación automática una vez restablecidas las condiciones normales.
+* lectura periódica de temperatura;
+* cálculo de promedio móvil;
+* clasificación del estado térmico;
+* registro de eventos;
+* aplicación de límites configurados;
+* detención preventiva de procesos cuando corresponde;
+* recuperación del estado normal cuando las condiciones lo permiten.
 
-La supervisión térmica protege la ejecución del pipeline independientemente del backend de inferencia utilizado.
-
----
-
-# Observabilidad del sistema
-
-La arquitectura incorpora mecanismos de observabilidad que permiten analizar el comportamiento del sistema durante cada consulta sin introducir dependencias entre los distintos componentes.
-
-El módulo `logger.py` registra cronológicamente los eventos del pipeline e incorpora métricas automáticas como:
-
-- tiempo de generación del embedding (`EMBEDDING_TIME`);
-- tiempo de recuperación semántica (`SEARCH_TIME`);
-- tiempo de inferencia (`LLM_TIME`);
-- tiempo total del pipeline (`PIPELINE_TIME`).
-
-Además del registro cronológico y las métricas de rendimiento, `logger.py` proporciona un mecanismo genérico de depuración mediante la función `log_debug()`, permitiendo que cualquier módulo registre información técnica adicional sin incorporar lógica de diagnóstico dentro de sus propias responsabilidades.
-
-De esta forma, componentes como `query.py` pueden registrar información útil para el análisis —por ejemplo, los fragmentos recuperados durante la búsqueda semántica— manteniendo completamente desacoplado el sistema de observabilidad del resto de la arquitectura.
-
-Esta organización facilita:
-
-- el diagnóstico de incidencias;
-- la validación del funcionamiento del pipeline;
-- la comparación entre distintos modos de operación;
-- el análisis del rendimiento del sistema;
-- la incorporación de nuevos mecanismos de depuración sin modificar los componentes funcionales.
+La supervisión térmica permanece desacoplada del backend de inferencia.
 
 ---
 
-# Componentes principales
+## 11. Observabilidad del sistema
 
-| Componente | Responsabilidad |
-|------------|-----------------|
-| `ingest.py` | Procesamiento e ingestión documental. |
-| `chunk.py` | Fragmentación de documentos para su indexación. |
-| `embed.py` | Generación de embeddings. |
-| `symbol_extractor.py` | Construcción del índice arquitectónico (`symbols.jsonl`). |
-| `query.py` | Coordinador principal del pipeline RAG y constructor del contexto enviado al backend de inferencia. |
-| `llm_backend.py` | Abstracción del backend de inferencia. |
-| `logger.py` | Registro cronológico, métricas del pipeline y observabilidad. |
-| `thermal_watchdog.py` | Supervisión térmica y protección preventiva. |
-| `export_temp_server.py` | Adaptación de LibreHardwareMonitor para WSL2 mediante Flask. |
-| `LibreHardwareMonitor` | Obtención de información térmica del hardware. |
+La arquitectura incorpora mecanismos de observabilidad destinados a analizar el comportamiento del pipeline sin introducir responsabilidades adicionales en los módulos funcionales.
 
----
-
-# Organización del repositorio
-
-La documentación del proyecto se encuentra organizada para facilitar su consulta y mantenimiento.
+El módulo principal es:
 
 ```text
-Arquitectura_RAG_Termica
+logger.py
+```
+
+Entre la información registrada se encuentran eventos relacionados con las distintas etapas del pipeline.
+
+También se contemplan métricas como:
+
+* `EMBEDDING_TIME`;
+* `SEARCH_TIME`;
+* `LLM_TIME`;
+* `PIPELINE_TIME`.
+
+La observabilidad permite:
+
+* diagnosticar incidencias;
+* analizar el rendimiento;
+* comparar ejecuciones;
+* validar cambios;
+* identificar cuellos de botella;
+* conservar evidencia del comportamiento real del sistema.
+
+La información de depuración y las métricas permanecen separadas de la lógica principal de recuperación e inferencia.
+
+---
+
+## 12. Componentes principales
+
+| Componente                 | Responsabilidad principal                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| `ingest.py`                | Procesamiento e ingestión de conocimiento documental.                                |
+| `chunk.py`                 | Fragmentación de contenido para su posterior procesamiento.                          |
+| `embed.py`                 | Generación de embeddings.                                                            |
+| `symbols_extractor.py`     | Coordinación de la extracción estructurada de símbolos.                              |
+| `parsers/csharp_parser.py` | Parser heurístico de código C#.                                                      |
+| `query.py`                 | Coordinación del proceso de consulta y construcción del contexto.                    |
+| `llm_backend.py`           | Abstracción de los proveedores de inferencia.                                        |
+| `config_loader.py`         | Carga centralizada de configuración.                                                 |
+| `knowledge_filter.py`      | Aplicación de políticas y filtros relacionados con la construcción del conocimiento. |
+| `logger.py`                | Registro de eventos, métricas y observabilidad.                                      |
+| `thermal_watchdog.py`      | Supervisión térmica y protección preventiva.                                         |
+| `export_temp_server.py`    | Publicación de información térmica desde Windows hacia WSL2.                         |
+
+---
+
+## 13. Organización del repositorio
+
+La estructura general del repositorio separa:
+
+* documentación;
+* decisiones arquitectónicas;
+* pruebas;
+* código relacionado con Windows;
+* código ejecutado en WSL2.
+
+```text
+Arquitectura_RAG_Termica/
 │
 ├── README.md
 ├── LICENSE
@@ -434,131 +498,195 @@ Arquitectura_RAG_Termica
 └── source/
 ```
 
-La descripción detallada de la estructura del repositorio se encuentra en `ESTRUCTURA_DEL_PROYECTO.md`.
+La descripción detallada de la organización se encuentra en:
 
-La documentación técnica completa se organiza dentro del directorio `docs/`, mientras que el directorio `source/` conserva una copia documentada de los principales componentes implementados durante la evolución del proyecto.
+```text
+ESTRUCTURA_DEL_PROYECTO.md
+```
 
----
+La documentación técnica y arquitectónica se encuentra en:
 
-# Tecnologías utilizadas
+```text
+docs/
+```
 
-| Área | Tecnología |
-|------|------------|
-| Lenguaje principal | Python |
-| Sistema anfitrión | Windows 10 |
-| Entorno IA | WSL2 Ubuntu |
-| Recuperación RAG | Embeddings locales |
-| Modelo de embeddings | `nomic-embed-text` |
-| Inferencia LOCAL | Ollama |
-| Inferencia CLOUD | OpenRouter |
-| Supervisión térmica | LibreHardwareMonitor |
-| Servicio de monitoreo | Flask |
-| Comunicación Windows–WSL2 | HTTP + JSON |
-| Control de versiones | Git / GitHub |
+El código fuente documentado y organizado por entorno se encuentra en:
 
----
-# Estado actual del proyecto
-
-**Estado de la documentación:** 28 de julio de 2026.
-
-En su estado actual, el proyecto dispone de:
-
-- Arquitectura RAG modular y desacoplada.
-- Recuperación semántica completamente local.
-- Construcción explícita del contexto RAG antes de la inferencia.
-- Índice de embeddings mediante `embeddings.jsonl`.
-- Índice arquitectónico mediante `symbols.jsonl`.
-- Capa de abstracción de inferencia implementada en `llm_backend.py`.
-- Backend **LOCAL** basado en Ollama.
-- Backend **CLOUD** basado en OpenRouter.
-- Registro cronológico de eventos mediante `logger.py`.
-- Métricas automáticas del pipeline (`EMBEDDING_TIME`, `SEARCH_TIME`, `LLM_TIME` y `PIPELINE_TIME`).
-- Mecanismo centralizado de depuración mediante `log_debug()`.
-- Supervisión térmica desacoplada mediante `thermal_watchdog.py`.
-- Protección preventiva frente a sobretemperatura.
-- Documentación técnica organizada por componentes.
-- Evidencias históricas de pruebas documentadas.
-
-La arquitectura continúa evolucionando mediante mejoras incrementales, procurando mantener la coherencia entre la implementación, la documentación técnica y los principios de diseño definidos para el proyecto.
+```text
+source/
+```
 
 ---
 
-# Documentación
+## 14. Tecnologías utilizadas
 
-La documentación técnica del proyecto se encuentra organizada en documentos independientes, cada uno dedicado a un aspecto específico de la arquitectura.
-
-| Documento | Contenido |
-|-----------|-----------|
-| `01_vision_general.md` | Contexto, motivación y objetivos del proyecto. |
-| `02_arquitectura_del_sistema.md` | Arquitectura general del sistema y organización de componentes. |
-| `03_pipeline_RAG.md` | Flujo del pipeline RAG y construcción del contexto. |
-| `04_ollama_y_entorno.md` | Configuración del entorno de ejecución e inferencia. |
-| `05_supervision_y_proteccion_termica.md` | Arquitectura de supervisión térmica y mecanismos de protección. |
-| `06_pruebas_y_validacion.md` | Estrategia de pruebas y validación del sistema. |
-| `07_mantenimiento_y_evolucion.md` | Operación, mantenimiento y evolución prevista. |
-| `08_backend_hibrido.md` | Arquitectura del backend de inferencia y desacoplamiento entre recuperación e inferencia. |
-
-El directorio `docs/pruebas/` conserva la evidencia histórica de las principales pruebas realizadas durante el desarrollo del proyecto.
-
-Actualmente incluye, entre otras:
-
-- validación del backend LOCAL;
-- validación de la protección térmica;
-- validación de la arquitectura híbrida LOCAL/CLOUD;
-- validación de la integración del pipeline RAG con la construcción efectiva del contexto.
+| Área                      | Tecnología           |
+| ------------------------- | -------------------- |
+| Lenguaje principal        | Python               |
+| Sistema anfitrión         | Windows 10           |
+| Entorno de ejecución      | WSL2 Ubuntu          |
+| Proyecto analizado        | .NET MAUI / C#       |
+| Recuperación RAG          | Embeddings locales   |
+| Modelo de embeddings      | `nomic-embed-text`   |
+| Inferencia LOCAL          | Ollama               |
+| Inferencia CLOUD          | OpenRouter           |
+| Supervisión térmica       | LibreHardwareMonitor |
+| Servicio de monitoreo     | Flask                |
+| Comunicación Windows–WSL2 | HTTP + JSON          |
+| Control de versiones      | Git / GitHub         |
 
 ---
 
-# Evolución prevista
+## 15. Estado actual del proyecto
 
-La arquitectura fue diseñada para facilitar la incorporación progresiva de nuevas capacidades sin modificar los principios fundamentales del sistema.
+El proyecto se encuentra en una etapa de evolución incremental.
 
-Entre las posibles líneas de evolución se encuentran:
+Entre las capacidades actualmente desarrolladas se encuentran:
 
-- incorporación de nuevos proveedores de inferencia;
-- selección dinámica del backend según las condiciones del sistema;
-- ampliación de las métricas de observabilidad;
-- incorporación de métricas de recuperación documental;
-- ampliación de la supervisión de recursos del sistema;
-- automatización del entorno de ejecución;
-- incorporación de herramientas de administración y diagnóstico;
-- especialización de asistentes técnicos para distintos dominios.
+* arquitectura RAG modular;
+* recuperación semántica local;
+* generación local de embeddings;
+* separación entre recuperación e inferencia;
+* backend LOCAL mediante Ollama;
+* backend CLOUD mediante OpenRouter;
+* construcción progresiva de mecanismos para enriquecer el contexto;
+* extracción estructurada de símbolos desde código C#;
+* contrato definido para la representación de símbolos;
+* pruebas sintéticas de regresión para el parser C#;
+* registro cronológico de eventos;
+* métricas del pipeline;
+* mecanismos de depuración;
+* supervisión térmica desacoplada;
+* protección preventiva frente a condiciones térmicas críticas;
+* documentación técnica organizada;
+* registro de decisiones arquitectónicas mediante ADR;
+* conservación de evidencias históricas de pruebas.
 
-Estas líneas representan objetivos de evolución y no funcionalidades implementadas actualmente.
-
----
-
-# Filosofía del proyecto
-
-Más allá de la implementación de un pipeline RAG, este proyecto persigue el diseño de una arquitectura capaz de evolucionar de forma ordenada, documentada y sostenible.
-
-Cada decisión de diseño busca favorecer:
-
-- modularidad;
-- bajo acoplamiento;
-- alta cohesión;
-- facilidad de mantenimiento;
-- observabilidad del sistema;
-- trazabilidad entre código y documentación;
-- reutilización de componentes;
-- incorporación progresiva de nuevas capacidades sin comprometer la estabilidad de la arquitectura.
-
-La documentación constituye un componente esencial del proyecto y evoluciona de forma coordinada con la implementación.
+El trabajo actual se orienta a consolidar los componentes desarrollados antes de continuar incorporando nuevas capas de complejidad.
 
 ---
 
-# Licencia
+## 16. Documentación
+
+La documentación técnica del proyecto se encuentra organizada en documentos independientes.
+
+| Documento                                | Contenido                                           |
+| ---------------------------------------- | --------------------------------------------------- |
+| `01_vision_general.md`                   | Contexto, motivación y objetivos del proyecto.      |
+| `02_arquitectura_del_sistema.md`         | Arquitectura general y organización de componentes. |
+| `03_pipeline_RAG.md`                     | Flujo del pipeline y construcción del contexto.     |
+| `04_ollama_y_entorno.md`                 | Configuración del entorno y modelos utilizados.     |
+| `05_supervision_y_proteccion_termica.md` | Supervisión térmica y mecanismos de protección.     |
+| `06_pruebas_y_validacion.md`             | Estrategia y evidencias de validación.              |
+| `07_mantenimiento_y_evolucion.md`        | Mantenimiento y evolución prevista.                 |
+| `08_backend_hibrido.md`                  | Desacoplamiento entre recuperación e inferencia.    |
+| `09_hoja_de_ruta_arquitectura.md`        | Evolución progresiva de la arquitectura.            |
+| `docs/adr/`                              | Registro de decisiones arquitectónicas.             |
+| `docs/pruebas/`                          | Evidencia histórica de pruebas realizadas.          |
+
+La estructura detallada de estos documentos puede consultarse en:
+
+```text
+ESTRUCTURA_DEL_PROYECTO.md
+```
+
+---
+
+## 17. Evolución prevista
+
+La evolución del proyecto continuará mediante incrementos controlados.
+
+El principio general será:
+
+```text
+Medir comportamiento real
+        ↓
+Identificar una limitación concreta
+        ↓
+Reproducir el problema
+        ↓
+Aplicar el cambio mínimo necesario
+        ↓
+Validar mediante pruebas
+        ↓
+Documentar y consolidar
+```
+
+Entre las posibles líneas futuras se encuentran:
+
+* mejora de la calidad de recuperación;
+* evaluación del ranking de resultados;
+* enriquecimiento progresivo del contexto;
+* incorporación controlada de nuevas Knowledge Sources;
+* establecimiento de relaciones entre componentes;
+* análisis de dependencias;
+* incorporación de información temporal;
+* evaluación comparativa de modelos;
+* métricas de calidad del contexto;
+* evolución progresiva hacia un asistente técnico especializado en el proyecto.
+
+Estas capacidades deberán incorporarse únicamente cuando exista una necesidad concreta y evidencia de que aportan valor al sistema.
+
+---
+
+## 18. Filosofía del proyecto
+
+Este proyecto no busca únicamente implementar un pipeline RAG funcional.
+
+Su propósito es estudiar cómo construir una arquitectura capaz de evolucionar de manera:
+
+* modular;
+* documentada;
+* observable;
+* mantenible;
+* trazable;
+* incremental.
+
+El objetivo central es mejorar progresivamente la forma en que el conocimiento de un proyecto de software puede ser:
+
+```text
+Adquirido
+    ↓
+Procesado
+    ↓
+Recuperado
+    ↓
+Organizado
+    ↓
+Integrado en contexto
+    ↓
+Utilizado por un modelo de lenguaje
+```
+
+La arquitectura debe permitir experimentar con estas etapas sin comprometer innecesariamente la estabilidad del sistema.
+
+La documentación, las pruebas y las decisiones arquitectónicas forman parte del desarrollo y deben evolucionar de forma coordinada con la implementación.
+
+---
+
+## 19. Licencia
 
 Este proyecto se distribuye bajo la licencia **MIT**.
 
-Las herramientas, modelos de lenguaje, bibliotecas y servicios utilizados durante el desarrollo mantienen sus respectivas licencias y condiciones de uso.
+Las herramientas, bibliotecas, modelos y servicios utilizados durante su desarrollo mantienen sus respectivas licencias y condiciones de uso.
 
 ---
 
-# Agradecimientos
+## 20. Visión a largo plazo
 
-Este proyecto ha servido como plataforma experimental para estudiar la integración de recuperación semántica, modelos de lenguaje, arquitectura de software y supervisión de recursos sobre hardware de propósito general.
+La visión del proyecto es evolucionar desde un pipeline experimental de recuperación y construcción de contexto hacia un asistente técnico capaz de colaborar con el desarrollador durante el ciclo de vida del software.
 
-La evolución del sistema ha permitido consolidar una arquitectura híbrida en la que la recuperación del conocimiento, la construcción del contexto, la inferencia, la observabilidad y la supervisión térmica permanecen claramente desacopladas.
+Para ello, la arquitectura deberá avanzar progresivamente hacia una base de conocimiento capaz de mantener sincronizada información procedente de:
 
-Esta organización constituye una base sólida para continuar evolucionando el proyecto hacia asistentes técnicos especializados, manteniendo la coherencia entre el código fuente, la documentación técnica y los principios arquitectónicos definidos desde sus primeras versiones.
+* documentación;
+* código fuente;
+* símbolos y estructuras del proyecto;
+* decisiones arquitectónicas;
+* relaciones entre componentes;
+* restricciones conocidas;
+* cambios relevantes en la evolución del sistema.
+
+La incorporación de estas capacidades deberá preservar los principios fundamentales del proyecto:
+
+> **medir antes de complejizar, desacoplar responsabilidades, validar cada cambio y mantener la coherencia entre implementación, pruebas, documentación y decisiones arquitectónicas.**
+

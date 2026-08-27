@@ -1,624 +1,182 @@
-# Pruebas y Validación del Sistema
+# 06 — Pruebas y Validación del Sistema
 
-## 1. Introducción
+**Fecha:** 26 de agosto de 2026
+**Versión:** 0.5.1
+**Estado:** Consolidado / Documentación oficial
+**Módulo:** Calidad & Validación / Suite de Pruebas Integradas
+**Propósito:** Documentar la estrategia de validación técnica, las pruebas de integración del pipeline RAG, la verificación de la extracción de símbolos (KS2), la reconciliación vectorial, las pruebas de aborto térmico, los límites de la validación actual y la deuda técnica identificada.
 
-Durante el desarrollo del proyecto se realizaron pruebas progresivas para validar cada uno de los componentes que forman la arquitectura del sistema.
+---
 
-La estrategia seguida consistió en verificar cada componente de manera independiente antes de integrarlo con el resto del pipeline.
+> **Resumen ejecutivo:**  
+> La validación de **Arquitectura_RAG_Termica** (v0.5.1) se ha ejecutado bajo un enfoque bottom-up en un entorno de hardware limitado (AMD FX-6300, 16 GB RAM). El ciclo de preparación de conocimiento **KS2** (`knowledge_filter.py` v1.7, `symbols_extractor.py` v1.1, `csharp_parser.py` v2.1.5) y la reconciliación vectorial (`embed.py`) han sido completamente validados de punta a punta sobre el Target Project **MauiAppGestorMovil**.  
+>  
+> **Aviso de Alcance y Deuda Técnica:** La versión v0.5 previa en GitHub cuenta con validación end-to-end completa del pipeline de consulta (`query.py`). Sin embargo, en esta versión v0.5.1, la integración aguas abajo en `query.py` consumiendo los nuevos símbolos enriquecidos y la incorporación de parsers adicionales (como el parser CSS) **quedan registradas como deuda técnica pendiente para la siguiente iteración**, siendo la prioridad inmediata la sincronización de estos cambios congelados en GitHub antes de abordar la validación integral del motor de consultas.
+
+---
+
+## 1. Introducción y estrategia de pruebas
+
+Durante el desarrollo del proyecto se realizaron pruebas progresivas e independientes para validar cada módulo antes de integrar el pipeline completo:
 
 ```text
-Hardware
-
-    │
-    ▼
-
-LibreHardwareMonitor
-
-    │
-    ▼
-
-export_temp_server.py
-
-    │
-    ▼
-
-thermal_watchdog.py
-
-    │
-    ▼
-
-query.py
-
-    │
-    ▼
-
-llm_backend.py
-
-    │
-    ▼
-
-Backend de inferencia
-
-(LOCAL o CLOUD)
+ Sensores Físicos (Windows)
+           │
+           ▼
+ LibreHardwareMonitor / export_temp_server.py (Flask :5005)
+           │
+           ▼
+ thermal_watchdog.py (Supervisión continua & pkill)
+           │
+           ▼
+ KS2 Pipeline (knowledge_filter v1.7 ──> symbols_extractor v1.1 / csharp_parser v2.1.5) [VALIDADO]
+           │
+           ▼
+ Indexación Vectorial (embed.py - nomic-embed-text) [VALIDADO]
+           │
+           ▼
+ Motor de Consultas (query.py ──> logger.py ──> llm_backend.py) [DEUDA PENDIENTE INTEGRACIÓN RICA]
+           │
+           ▼
+ Backends de Inferencia (LOCAL: Ollama / CLOUD: OpenRouter) [VALIDADO EN BASE v0.5]
 ```
 
-Este enfoque permitió aislar posibles incidencias, facilitar el proceso de depuración y validar progresivamente el funcionamiento del sistema sobre un equipo con recursos limitados.
-
-La mayor parte de las pruebas de integración se realizaron utilizando el backend **LOCAL (Ollama)**, ya que fue el primer entorno de inferencia implementado durante el desarrollo del proyecto.
+Este enfoque permitió aislar incidencias, garantizar trazabilidad mediante la carpeta `docs/pruebas/` y comprobar el rendimiento sin comprometer la integridad térmica del hardware.
 
 ---
 
-# 2. Entorno de pruebas
+## 2. Entorno de hardware y software de prueba
 
-## Hardware utilizado
-
-Las pruebas fueron realizadas sobre el equipo principal de desarrollo.
-
-Características relevantes:
-
+### Hardware de referencia (PC Manuel C)
 ```text
-CPU:
-AMD FX-6300 Six-Core
-
-RAM:
-16 GB
-
-GPU:
-Sin aceleración dedicada para IA
-
-Sistema operativo:
-Windows 10 Pro
-
-Entorno IA:
-WSL2 Ubuntu
+CPU:               AMD FX-6300 Six-Core Processor (3.50 GHz)
+RAM:               16 GB DDR3
+Almacenamiento:    SSD Patriot 480 GB (SO) + HDD 1 TB (Data)
+GPU:               AMD Radeon R7 200 Series (Sin aceleración CUDA/IA)
+Sistema Operativo: Windows 10 Pro + WSL2 Ubuntu 24.04 LTS
 ```
 
----
+### Matriz de componentes evaluados
 
-## Software utilizado
-
-| Componente | Tecnología |
-|------------|------------|
-| Monitorización del hardware | LibreHardwareMonitor |
-| Servicio de adaptación térmica | Flask + Python |
-| Pipeline RAG | Python |
-| Backend LOCAL | Ollama |
-| Backend CLOUD | OpenRouter |
-| Modelo de embeddings | nomic-embed-text |
-| Supervisión térmica | thermal_watchdog.py |
-
-No todas las pruebas utilizaron ambos backends de inferencia; la mayoría fueron realizadas sobre el backend LOCAL.
+| Componente | Versión / Tecnología | Entorno | Alcance de Validación v0.5.1 |
+| :--- | :--- | :--- | :---: |
+| **Telemetría Térmica** | `export_temp_server.py` (Flask 5005) | Windows | ✅ Validado |
+| **Supervisión Daemon** | `thermal_watchdog.py` | WSL2 (`~/rag_maui_docs_for_rag/scripts`) | ✅ Validado |
+| **Filtrado Workspace** | `knowledge_filter.py` (v1.7) | WSL2 (`~/rag_maui_docs_for_rag/scripts`) | ✅ Validado |
+| **Extractor de Símbolos** | `symbols_extractor.py` (v1.1) | WSL2 (`~/rag_maui_docs_for_rag/scripts`) | ✅ Validado |
+| **Parser C# / MAUI** | `csharp_parser.py` (v2.1.5) | WSL2 (`~/rag_maui_docs_for_rag/scripts/parsers`) | ✅ Validado (9/9 PASS) |
+| **Parser CSS / Otros** | `css_parser.py` | WSL2 (`~/rag_maui_docs_for_rag/scripts/parsers`) | ⏳ Pendiente Próxima Versión |
+| **Embeddings & Reconciliación** | `embed.py` (`nomic-embed-text`) | WSL2 (`~/rag_maui_docs_for_rag/scripts`) | ✅ Validado |
+| **Integración Rica `query.py`** | `query.py` (Consumo EsquemaKS2) | WSL2 (`~/rag_maui_docs_for_rag/scripts`) | ⏳ Pendiente (Validado en base v0.5) |
+| **Inferencia Local/Cloud** | `llm_backend.py` (Ollama / OpenRouter) | WSL2 (`localhost:11434` / API) | ✅ Validado |
 
 ---
 
-# 3. Validación de LibreHardwareMonitor
+## 3. Validación de la infraestructura de telemetría térmica
 
-## Objetivo
-
-Confirmar que el sistema podía acceder correctamente a la información proporcionada por los sensores térmicos del equipo.
-
----
-
-## Prueba realizada
-
-Consulta directa al servicio de LibreHardwareMonitor:
-
-```text
-http://localhost:8085/data.json
-```
-
-Resultado esperado (ejemplo simplificado):
-
-```json
-{
-  "Text": "Temperature #1",
-  "Value": "45 °C"
-}
-```
+### 3.1 Servicio Windows (`export_temp_server.py`)
+* **Objetivo:** Verificar la captura de temperatura del procesador y la publicación de la API HTTP.
+* **Sensor Validado:** `Nuvoton NCT6776F -> Temperatures -> Temperature #1`.
+* **Respuesta HTTP (Puerto 5005):**
+  ```json
+  {
+    "id": 0,
+    "Text": "CPU Temperature",
+    "Value": 45.0,
+    "Min": 38.0,
+    "Max": 72.0,
+    "timestamp": 1784056081
+  }
+  ```
+* **Verificación de Descubrimiento de IP:** Escritura correcta en `windows_ip.txt` (`192.168.1.37`).
 
 ---
 
-## Resultado
-
-Validado.
-
-Se comprobó que el sensor utilizado corresponde al árbol:
-
-```text
-Nuvoton NCT6776F
-
-        │
-        └── Temperatures
-
-                │
-                └── Temperature #1
-```
-
-Este sensor fue posteriormente utilizado por el resto de la arquitectura de supervisión térmica.
+### 3.2 Supervisión y Aborto Térmico (`thermal_watchdog.py`)
+* **Evidencia Documentada:** `docs/pruebas/2026-07-20_prueba02_backend_local_qwen2.5_abort_termico.md`.
+* **Escenario de Prueba:** Carga intensiva continua sobre los 6 núcleos del CPU durante inferencia local con Ollama.
+* **Resultado:** Al alcanzar el umbral `TEMP_CRITICAL` (62.0 °C en promedio móvil $N=5$), el *watchdog* ejecutó de forma atómica:
+  ```bash
+  pkill -f query.py
+  ```
+* **Trazabilidad:** Registro completo del evento almacenado en `thermal_watchdog_log.txt` confirmando la detención inmediata y el posterior enfriamiento del procesador hasta la zona segura (`< 58.0 °C`).
 
 ---
 
-# 4. Validación de export_temp_server.py
+## 4. Validación del ciclo de conocimiento KS2 (21–24 de agosto de 2026)
 
-## Objetivo
+Se validó end-to-end el subsistema de estructuración de conocimiento (KS2) sobre el Target Project real **MauiAppGestorMovil** (`~/rag_workspace/MauiAppGestorMovil`).
 
-Verificar la transformación de la información generada por LibreHardwareMonitor en una API simplificada accesible desde WSL2.
-
----
-
-## Ejecución
-
-Ubicación del proyecto:
-
-```text
-E:\Developer\Tools\LibreHardwareMonitor\python
-```
-
-Inicio del servicio:
-
-```bat
-start_server.bat
-```
+### 4.1 Filtrado de Workspace (`knowledge_filter.py` v1.7)
+* **Reglas:** `knowledge_policy.conf` v1.2 (exclusión de `DatosIniciales/` y carpetas `Deprecated`).
+* **Seguridad:** Verificación del método `is_safe_to_delete()` antes de la limpieza de directorios.
+* **Resultado Obtención:** **141 archivos analizados**, **76 archivos copiados** para procesamiento y **65 archivos excluidos** por política.
 
 ---
 
-## Endpoint publicado
-
-```text
-http://localhost:5005/data.json
-```
-
----
-
-## Resultado obtenido
-
-Ejemplo:
-
-```json
-{
-  "id": 0,
-  "Text": "CPU Temperature",
-  "Value": 44.0,
-  "Min": 0,
-  "Max": 100,
-  "timestamp": 1784056081
-}
-```
+### 4.2 Extracción de Símbolos (`symbols_extractor.py` v1.1 + `csharp_parser.py` v2.1.5)
+* **Mejora Evaluada:** Corrección del parser C# v2.1.5 para la clasificación explícita de constructores (`is_constructor: true`) como `public App()`.
+* **Pruebas Unitarias:** Suite `test_parser_v215.py` con **9/9 PASS** (7 tests base + 2 tests específicos de constructores).
+* **Resultado de Extracción:** **53 archivos C# procesados**, obteniendo **57 símbolos estructurados** guardados atómicamente en `knowledge/symbols/symbols_raw.jsonl`.
 
 ---
 
-## Resultado
-
-Validado.
-
-El servicio publica únicamente la información necesaria para la supervisión térmica, evitando exponer la estructura completa generada por LibreHardwareMonitor.
-
----
-
-# 5. Validación de la comunicación Windows ↔ WSL2
-
-## Objetivo
-
-Comprobar que el entorno Linux podía acceder correctamente al servicio HTTP publicado desde Windows.
+### 4.3 Sincronización y Reconciliación Vectorial (`embed.py` - ADR-012)
+* **Evidencia Documentada:** `docs/pruebas/2026-08-12_prueba05_adr012_reconciliacion_embeddings.md`.
+* **Verificación Aritmética:**
+  * Índice previo: 63 registros
+  * Entidades leídas actuales: 57
+  * Registros sin cambios: 14
+  * Registros modificados: 43 (actualización de metadata de constructores C# v2.1.5)
+  * Registros eliminados: 6 (símbolos provenientes de carpetas marcadas como Deprecated)
+  * **Consistencia:** $14 + 43 = 57$ leídos; $57 + 6 = 63$ previos.
+* **Resultado:** `embeddings.jsonl` actualizado atómicamente en `knowledge/embeddings/` sin re-vectorización innecesaria.
 
 ---
 
-## Prueba realizada desde WSL2
+## 5. Delimitación de alcance y Deuda Técnica en `query.py`
 
-Comando ejecutado:
+Es importante distinguir la frontera entre lo validado en esta versión y los desarrollos pendientes:
 
-```bash
-curl http://192.168.1.36:5005/data.json
-```
-
----
-
-## Resultado obtenido
-
-Ejemplo:
-
-```json
-{
-  "Text": "CPU Temperature",
-  "Value": 45.0
-}
-```
+1. **Estado del Pipeline en GitHub (Versión Base v0.5):** La versión actualmente publicada en GitHub cuenta con validación funcional de punta a punta desde la ingestión hasta la respuesta final de `query.py` utilizando embeddings estándar.
+2. **Estado en Versión v0.5.1 (Actual):** El ciclo de preparación de conocimiento KS2 (`knowledge_filter` v1.7, `symbols_extractor` v1.1, `csharp_parser` v2.1.5 y `embed.py`) está **congelado, probado y verificado al 100%**.
+3. **Deuda Técnica Identificada (Próxima Actualización):**
+   * **Consumo de Símbolos Ricos en `query.py`:** La adaptación de `query.py` para aprovechar la rica estructura de constructores y metadatos extraídos por KS2 se abordará tras sincronizar estos cambios en GitHub.
+   * **Inclusión y Validación de Parsers Adicionales:** El soporte y validación end-to-end de parsers para otros formatos (como el parser CSS) no formó parte del índice actual congelado y queda agendado para la posterior versión del sistema.
 
 ---
 
-## Resultado
+## 6. Observabilidad y Auditoría (`logger.py`)
 
-Comunicación validada.
-
-La resolución de la dirección IP se realiza mediante el mecanismo implementado con:
-
-```text
-Windows
-
-      │
-
-      ▼
-
-windows_ip.txt
-
-      │
-
-      ▼
-
-WSL2
-```
-
-Este mecanismo evita depender de direcciones IP configuradas manualmente.
+Se confirmó que cada ejecución en `query.py` registra de forma independiente la sesión en `query_log.txt`, auditando:
+1. Secuencia cronológica de eventos (`INPUT_RECEIVED`, `SEARCH_START`, `LLM_START`, `LLM_DONE`).
+2. Tiempos por fase (`EMBEDDING_TIME`, `SEARCH_TIME`, `LLM_TIME`, `PIPELINE_TIME`).
+3. Diagnóstico de chunks recuperados mediante la bandera `DEBUG_CHUNKS` y la función `log_debug()`.
 
 ---
 
-# 6. Validación de thermal_watchdog.py
+## 7. Matriz de Estado Final de Pruebas (Al 26 de agosto de 2026)
 
-## Objetivo
-
-Comprobar el funcionamiento continuo del sistema de supervisión térmica.
-
----
-
-## Ejecución
-
-Desde WSL2:
-
-```bash
-python3 thermal_watchdog.py
-```
-
----
-
-## Resultado obtenido
-
-Ejemplo:
-
-```text
-📖 IP Windows detectada desde archivo:
-192.168.1.36
-
-🟢 Thermal Watchdog iniciado
-
-🌐 Endpoint:
-http://192.168.1.36:5005/data.json
-
-🌡 CPU: 45.00°C | Avg(1):45.00°C | Estado:NORMAL
-🌡 CPU: 45.00°C | Avg(5):44.80°C | Estado:NORMAL
-```
+| Módulo / Prueba | Componente Evaluado | Estado v0.5.1 |
+| :--- | :--- | :---: |
+| Telemetría Windows | `export_temp_server.py` | ✅ VALIDADO |
+| Descubrimiento de IP | `windows_ip.txt` / Fallback Gateway | ✅ VALIDADO |
+| Daemon Watchdog | `thermal_watchdog.py` | ✅ VALIDADO |
+| Interrupción Preventiva | Aborto `pkill` por sobretemperatura | ✅ VALIDADO |
+| Filtrado Workspace | `knowledge_filter.py` (v1.7) | ✅ VALIDADO |
+| Extracción Símbolos C# | `symbols_extractor.py` (v1.1) / `csharp_parser.py` (v2.1.5) | ✅ VALIDADO |
+| Extracción Parsers Extra | Parser CSS y extensiones secundarias | ⏳ DEUDA PENDIENTE |
+| Reconciliación Vectorial | `embed.py` (ADR-012) | ✅ VALIDADO |
+| RAG End-to-End Base | `query.py` (Base v0.5 en GitHub) | ✅ VALIDADO |
+| RAG Integración Rica KS2 | `query.py` (Consumo de `symbols_raw.jsonl` v2.1.5) | ⏳ DEUDA PENDIENTE |
+| Inferencia LOCAL / CLOUD | `llm_backend.py` (Ollama / OpenRouter) | ✅ VALIDADO |
+| Auditoría & Observabilidad | `logger.py` (`query_log.txt`) | ✅ VALIDADO |
 
 ---
 
-## Resultado
+## 8. Conclusión
 
-Validado.
+La suite de validación confirma que **Arquitectura_RAG_Termica** dispone de un subsistema de preparación de conocimiento (KS2) y protección térmica **completamente verificado y predecible**. 
 
-Se comprobó que el watchdog:
-
-- obtiene periódicamente la temperatura del procesador;
-- calcula el promedio móvil configurado;
-- clasifica el estado térmico;
-- mantiene la supervisión de forma continua;
-- registra eventos cuando corresponde.
-
----
-
-# 7. Validación del pipeline RAG
-
-## Objetivo
-
-Verificar el funcionamiento del flujo general de una consulta dentro del pipeline RAG.
-
-El proceso validado puede resumirse como:
-
-```text
-Consulta
-
-     │
-     ▼
-
-Embedding
-
-     │
-     ▼
-
-Recuperación semántica
-
-     │
-     ▼
-
-Preparación del contexto
-
-     │
-     ▼
-
-llm_backend.py
-
-     │
-     ▼
-
-Backend seleccionado
-
-     │
-     ▼
-
-Respuesta
-```
-
----
-
-## Componentes validados
-
-### Generación de embeddings
-
-Archivo generado:
-
-```text
-embeddings.jsonl
-```
-
-Resultado observado:
-
-```text
-Embeddings cargados correctamente
-```
-
----
-
-### Ejecución de consultas
-
-Comando utilizado:
-
-```bash
-python3 query.py
-```
-
----
-
-## Modos evaluados
-
-### DEPURACIÓN
-
-Modelo utilizado:
-
-```text
-qwen2.5-coder:1.5b
-```
-
-Objetivo:
-
-- análisis de errores de compilación;
-- revisión de código C#;
-- asistencia durante el desarrollo.
-
----
-
-### ARQUITECTURA
-
-Modelo utilizado:
-
-```text
-llama3.2:3b
-```
-
-Objetivo:
-
-- análisis de la arquitectura del sistema;
-- comprensión de relaciones entre componentes.
-
----
-
-### DOCUMENTACIÓN
-
-Modelo utilizado:
-
-```text
-llama3.2:3b
-```
-
-Objetivo:
-
-- explicación funcional del proyecto;
-- generación de documentación técnica.
-
----
-# 8. Validación del comportamiento térmico
-
-## Objetivo
-
-Evaluar el comportamiento térmico del equipo durante la ejecución de tareas con alta carga de procesamiento.
-
----
-
-## Pruebas realizadas
-
-Se realizaron pruebas principalmente durante:
-
-- generación masiva de embeddings;
-- consultas RAG con modelos locales;
-- ejecución continuada del pipeline.
-
----
-
-## Observaciones
-
-Durante las tareas más intensivas se observaron:
-
-```text
-Uso elevado del procesador
-(próximo al 100 %)
-```
-
-acompañado por un incremento significativo de la temperatura.
-
-En algunas pruebas se registraron temperaturas cercanas a:
-
-```text
-70 °C
-```
-
-Estos resultados confirmaron la necesidad de incorporar mecanismos de protección para preservar la estabilidad del sistema durante ejecuciones prolongadas.
-
----
-
-## Medidas implementadas
-
-Como resultado de las pruebas se incorporaron diferentes mecanismos de protección, entre ellos:
-
-- control de carga durante la generación de embeddings;
-- pausas configurables entre operaciones intensivas;
-- supervisión térmica continua;
-- detención automática del proceso cuando se alcanzan condiciones críticas.
-
----
-
-# 9. Validación de logger.py
-
-## Objetivo
-
-Verificar el registro cronológico de las operaciones realizadas durante la ejecución del pipeline.
-
----
-
-## Eventos registrados
-
-Entre los eventos observados durante las pruebas se encuentran:
-
-```text
-SESSION_START
-MODE_SELECTED
-INPUT_RECEIVED
-EMBEDDING_START
-EMBEDDING_OK
-SEARCH_START
-SEARCH_DONE
-LLM_START
-LLM_DONE
-SESSION_END
-```
-
-Además del flujo de ejecución, el registro incorpora información como:
-
-- tiempo transcurrido;
-- temperatura del sistema;
-- estado térmico;
-- modo de operación seleccionado;
-- backend utilizado (cuando corresponde).
-
----
-
-## Resultado
-
-Validado.
-
-El registro generado facilita el análisis posterior de incidencias y el seguimiento del comportamiento del sistema durante las pruebas.
-
----
-
-# 10. Problemas encontrados y soluciones
-
-## Problema: acceso al servicio térmico desde WSL2
-
-### Situación inicial
-
-El entorno WSL2 no podía acceder directamente al servicio publicado en Windows utilizando `localhost`.
-
----
-
-### Solución
-
-Se implementó un mecanismo de descubrimiento basado en:
-
-```text
-windows_ip.txt
-```
-
-con respaldo mediante la detección automática del gateway de WSL2.
-
----
-
-## Problema: identificación del sensor térmico
-
-### Situación inicial
-
-El archivo JSON generado por LibreHardwareMonitor contiene una gran cantidad de sensores, muchos de ellos no relacionados con la temperatura del procesador.
-
----
-
-### Solución
-
-Se implementó una búsqueda específica del sensor correspondiente a:
-
-```text
-Nuvoton NCT6776F
-
-        │
-
-        ▼
-
-Temperature #1
-```
-
-garantizando la utilización del mismo sensor en todas las pruebas.
-
----
-
-## Problema: carga elevada durante la generación de embeddings
-
-### Situación inicial
-
-La generación masiva de embeddings produjo un incremento considerable del uso del procesador y de la temperatura del sistema.
-
----
-
-### Solución
-
-Se incorporaron progresivamente:
-
-- control de carga;
-- pausas configurables;
-- supervisión térmica continua;
-- watchdog de protección.
-
-Estas medidas permitieron mejorar la estabilidad del entorno durante ejecuciones prolongadas.
-
----
-
-# 11. Estado actual de validación
-
-Hasta el momento se han validado satisfactoriamente los siguientes componentes:
-
-| Componente | Estado |
-|------------|:------:|
-| LibreHardwareMonitor | ✅ |
-| export_temp_server.py | ✅ |
-| Comunicación Windows ↔ WSL2 | ✅ |
-| thermal_watchdog.py | ✅ |
-| logger.py | ✅ |
-| Generación de embeddings | ✅ |
-| Recuperación documental | ✅ |
-| Pipeline RAG | ✅ |
-| Backend LOCAL (Ollama) | ✅ |
-| Protección térmica | ✅ |
-
-La arquitectura incorpora además soporte para un backend CLOUD mediante OpenRouter, cuya integración forma parte de la evolución del sistema.
-
----
-
-# 12. Conclusión
-
-Las pruebas realizadas permitieron validar progresivamente la arquitectura implementada, verificando tanto los componentes individuales como su funcionamiento integrado.
-
-En particular, se comprobó el correcto funcionamiento de:
-
-- la ingestión documental;
-- la generación de embeddings;
-- la recuperación semántica;
-- el pipeline RAG;
-- la supervisión térmica;
-- el registro de eventos durante la ejecución.
-
-Las pruebas también permitieron identificar limitaciones derivadas del hardware disponible, motivando la incorporación de mecanismos específicos de protección térmica y la posterior evolución hacia una arquitectura con soporte para distintos backends de inferencia.
-
-En su estado actual, el proyecto constituye una plataforma experimental estable para el desarrollo y evaluación de arquitecturas RAG, manteniendo un equilibrio entre capacidad de experimentación, protección del hardware y coherencia entre la implementación y la documentación técnica.
+Al haber cerrado el ciclo `knowledge_filter` ➔ `symbols_extractor` ➔ `csharp_parser` ➔ `embed.py` con consistencia matemática exacta sobre **MauiAppGestorMovil**, el sistema queda congelado en v0.5.1 y listo para subir al repositorio GitHub. La integración en `query.py` del esquema rico de símbolos y la validación con parsers adicionales (CSS) se constituyen como la hoja de ruta prioritaria inmediatamente posterior al commit.
 

@@ -6,42 +6,43 @@
 # query.py
 #
 # Versión:
-# 1.5
+# 1.6
 #
 # Fecha:
-# 28 de Julio de 2026
+# Agosto de 2026
 #
 # Descripción:
 # ------------
 # Módulo principal del pipeline RAG.
 #
-# Coordina el flujo completo de una consulta desde que el
-# usuario introduce una pregunta hasta que la respuesta es
-# generada por el backend de inferencia seleccionado.
+# Coordina la ejecución completa del pipeline, desde la
+# recepción de la consulta del usuario hasta la generación de
+# la respuesta y el registro de observabilidad del proceso.
 #
-# Este módulo constituye el núcleo del sistema y mantiene
-# desacopladas las etapas de recuperación de conocimiento,
-# construcción de contexto, generación de respuestas y
-# registro de métricas.
+# Actúa como orquestador de las distintas etapas del sistema,
+# manteniendo desacopladas la recuperación del conocimiento,
+# la construcción del contexto, la inferencia mediante el LLM
+# y el registro de métricas y depuración.
 #
 # Responsabilidades:
 # ------------------
 # - Recibir las consultas del usuario.
 # - Gestionar la sesión de trabajo.
 # - Detectar errores de compilación C# cuando existan.
-# - Generar embeddings mediante Ollama.
-# - Recuperar contexto desde la base vectorial.
-# - Recuperar información arquitectónica mediante symbols.jsonl.
-# - Construir el contexto RAG a partir de los chunks recuperados.
-# - Integrar el contexto simbólico al contexto de consulta.
-# - Construir el prompt enviado al backend de inferencia.
+# - Generar embeddings de la consulta mediante Ollama.
+# - Recuperar conocimiento desde la base vectorial.
+# - Recuperar información arquitectónica desde symbols.jsonl.
+# - Construir el contexto RAG a partir de múltiples chunks.
+# - Integrar el contexto simbólico al contexto recuperado.
+# - Construir el contexto enviado al backend de inferencia.
 # - Delegar la inferencia a llm_backend.py.
-# - Registrar la ejecución mediante logger.py.
-# - Facilitar mecanismos opcionales de depuración del pipeline.
+# - Registrar métricas y eventos mediante logger.py.
+# - Facilitar mecanismos opcionales de observabilidad y
+#   depuración del pipeline.
 #
 # Componentes utilizados:
 # -----------------------
-# Embeddings:
+# Modelo de embeddings:
 #     nomic-embed-text
 #
 # Backends disponibles:
@@ -53,9 +54,6 @@
 #     ARCH  -> llama3.2:3b
 #     DOCS  -> llama3.2:3b
 #
-# Modelo de embeddings:
-#     nomic-embed-text
-#
 # Modos de operación:
 # -------------------
 # 1. Depuración de código C# / .NET MAUI.
@@ -65,55 +63,54 @@
 # Arquitectura general:
 # ---------------------
 #
-#                  Usuario
-#                     │
-#                     ▼
-#              Recepción pregunta
-#                     │
-#                     ▼
+#                 Usuario
+#                    │
+#                    ▼
+#           Recepción de consulta
+#                    │
+#                    ▼
 #          Detección de errores C#
-#                     │
-#                     ▼
-#           Embedding de consulta
-#                     │
-#                     ▼
+#                    │
+#                    ▼
+#         Generación del embedding
+#                    │
+#                    ▼
 #        Recuperación semántica (RAG)
-#                     │
-#                     ▼
-#       Construcción del contexto RAG
-#                     │
-#                     ▼
-#      Recuperación de contexto simbólico
-#                     │
-#                     ▼
-#          Construcción del prompt
-#                     │
-#                     ▼
-#              llm_backend.py
-#          ┌──────────┴──────────┐
-#          │                     │
-#          ▼                     ▼
-#      Ollama               OpenRouter
-#          │                     │
-#          └──────────┬──────────┘
-#                     ▼
-#              Respuesta LLM
-#                     │
-#                     ▼
-#             Registro en logger.py
+#                    │
+#                    ▼
+#      Construcción del contexto RAG
+#          ┌─────────┴─────────┐
+#          ▼                   ▼
+# Contexto recuperado   Contexto simbólico
+#          └─────────┬─────────┘
+#                    ▼
+#      Construcción del prompt
+#                    │
+#                    ▼
+#             llm_backend.py
+#          ┌─────────┴─────────┐
+#          ▼                   ▼
+#      Ollama             OpenRouter
+#          └─────────┬─────────┘
+#                    ▼
+#             Respuesta LLM
+#                    │
+#                    ▼
+#     logger.py / Observabilidad
 #
 # Gestión de sesión:
 # ------------------
-# Cada consulta del usuario crea una nueva sesión lógica de
-# ejecución. La sesión conserva:
+# Cada consulta crea una nueva sesión lógica de ejecución.
+#
+# La sesión conserva:
 #
 # - modo operativo;
 # - backend de inferencia;
 # - modelo seleccionado;
-# - métricas de ejecución.
+# - métricas del pipeline.
 #
-# El registro asociado a la sesión se inicializa para cada
-# consulta mediante logger.py.
+# logger.py inicializa un nuevo registro para cada consulta y
+# calcula automáticamente las métricas de rendimiento.
 #
 # Supervisión térmica:
 # --------------------
@@ -128,45 +125,52 @@
 # interrumpir la ejecución de query.py cuando se alcanzan
 # condiciones térmicas críticas.
 #
-# Depuración:
-# -----------
-# El módulo incorpora mecanismos opcionales de depuración
+# Observabilidad y depuración:
+# ----------------------------
+# El módulo incorpora mecanismos opcionales de observabilidad
 # controlados mediante banderas de configuración.
 #
-# Entre ellos se encuentra la visualización y registro de los
-# chunks recuperados durante la búsqueda semántica, lo que
-# facilita validar el funcionamiento del pipeline RAG sin
-# modificar la lógica principal del sistema.
+# DEBUG_RETRIEVAL
+#     Registra score y origen de los chunks recuperados.
 #
-# Cambios versión 1.5:
+# DEBUG_CHUNKS
+#     Visualiza y registra el contenido de los chunks
+#     recuperados durante la búsqueda semántica.
+#
+# DEBUG_CONTEXT
+#     Registra información del contexto construido y una
+#     vista previa del contenido enviado al backend LLM.
+#
+# Estas capacidades permiten validar el funcionamiento del
+# pipeline sin modificar su lógica principal.
+#
+# Cambios versión 1.6:
 # --------------------
-# - Se incorpora el contenido recuperado desde embeddings.jsonl
-#   al contexto enviado al LLM.
-# - Se añade una etapa explícita de construcción del contexto
-#   RAG antes de generar el prompt final.
-# - La búsqueda semántica deja de ser únicamente una etapa de
-#   recuperación y pasa a participar activamente en la
-#   generación de respuestas.
-# - Se incorporan mecanismos opcionales para visualizar y
-#   registrar los chunks recuperados durante la depuración.
-# - Se mantiene sin cambios la configuración de recuperación:
-#       TOP_K
-#       SIM_THRESHOLD
-# - Se mantiene completamente desacoplada la arquitectura
-#   híbrida LOCAL / CLOUD.
+# - Se consolida la construcción explícita del contexto RAG.
+# - El contexto enviado al LLM se construye a partir de los
+#   chunks recuperados mediante búsqueda semántica.
+# - Se incorpora recuperación de múltiples chunks mediante
+#   TOP_K configurable.
+# - Se amplían los mecanismos de observabilidad del pipeline:
+#       * recuperación semántica;
+#       * chunks recuperados;
+#       * contexto construido.
+# - Se mantienen desacopladas las responsabilidades entre
+#   recuperación, construcción de contexto, inferencia,
+#   observabilidad y supervisión térmica.
+# - Se conserva la arquitectura híbrida LOCAL / CLOUD,
+#   independiente del backend utilizado en cada sesión.
 #
 # Objetivo de la versión:
 # -----------------------
 # Consolidar la utilización efectiva del conocimiento
-# recuperado por el pipeline RAG, incorporando el contexto
-# recuperado a la generación de respuestas y facilitando la
-# observabilidad del sistema mediante mecanismos opcionales de
-# depuración, sin afectar la separación de responsabilidades
-# entre recuperación, construcción del contexto, inferencia y
-# registro de métricas.
+# recuperado por el pipeline RAG, mejorando la construcción
+# del contexto enviado al modelo de lenguaje e incorporando
+# capacidades de observabilidad que faciliten el análisis,
+# validación y futura evolución de la arquitectura sin
+# aumentar el acoplamiento entre sus componentes.
 #
 # =============================================================
-
 
 import os
 import json
@@ -204,14 +208,18 @@ MODEL_DOCS = "llama3.2:3b"
 
 MODEL_EMBED = "nomic-embed-text"
 
-TOP_K = 1
+TOP_K = 3  #prueba: se cambió de 1 a 3 el 31/7/2026
 SIM_THRESHOLD = 0.25
 
 # =========================
-# DEPURACIÓN
+# DEPURACIÓN Y PRUEBAS
 # =========================
 
 DEBUG_CHUNKS = True
+
+DEBUG_RETRIEVAL = True
+
+DEBUG_CONTEXT = True
 
 
 
@@ -219,10 +227,10 @@ DEBUG_CHUNKS = True
 # THROTTLE
 # =========================
 
-def throttle():
+def throttle():			
 
-    if SLEEP_TIME > 0:
-        time.sleep(SLEEP_TIME)
+     if SLEEP_TIME > 0:		
+         time.sleep(SLEEP_TIME)	
 
 
 # =========================
@@ -465,8 +473,11 @@ def search(
 
 
     return [
-        item
-        for _, item in scored[:k]
+        {
+            "score": score,
+            "data": item
+        }
+        for score, item in scored[:k]
     ]
 
 
@@ -745,10 +756,42 @@ def main():
             file_filter
         )
 
+
+        if DEBUG_RETRIEVAL:
+
+            retrieval_info = ""
+
+            for i, result in enumerate(results, 1):
+
+                item = result["data"]
+
+                retrieval_info += (
+                    f"""
+Chunk:
+{i}
+
+Score:
+{result['score']:.4f}
+
+File:
+{item.get('file')}
+
+"""
+                )
+
+
+            log_debug(
+                "RETRIEVAL METADATA",
+                retrieval_info
+            )
+
+
+
         log_step(
             "SEARCH_DONE",
             session["mode"]
         )
+
 
         if DEBUG_CHUNKS:
 
@@ -756,10 +799,13 @@ def main():
 
             debug_text = ""
 
-            for i, item in enumerate(results, 1):
+            for i, result in enumerate(results, 1):
+
+                item = result["data"]
 
                 chunk = (
                     f"\nChunk {i}\n"
+                    f"Score : {result['score']:.4f}\n"
                     f"Archivo : {item.get('file')}\n"
                     f"Contenido:\n{item.get('content')}\n"
                 )
@@ -768,10 +814,12 @@ def main():
 
                 debug_text += chunk
 
+
             log_debug(
                 "CHUNKS RECUPERADOS",
                 debug_text
             )
+
 
 
         # =========================
@@ -785,13 +833,18 @@ def main():
         # En esta versión se incorpora nuevamente
         # este contenido al contexto enviado al LLM.
         #
+        # El contexto construido representa la
+        # información recuperada que será utilizada
+        # posteriormente por el backend LLM.
+        #
         # =========================
 
 
         context = ""
 
+        for result in results:
 
-        for item in results:
+            item = result["data"]
 
             context += (
                 "\n\n"
@@ -801,6 +854,33 @@ def main():
                     ""
                 )
             )
+
+
+        if DEBUG_CONTEXT:
+
+            log_debug(
+                "RAG CONTEXT METADATA",
+                f"""
+CHUNKS_USED:
+{len(results)}
+
+CONTEXT_CHARACTERS:
+{len(context)}
+
+TOP_K:
+{TOP_K}
+
+SIM_THRESHOLD:
+{SIM_THRESHOLD}
+"""
+            )
+
+
+            log_debug(
+                "RAG CONTEXT PREVIEW",
+                context[:2000]
+            )
+
 
 
         if file_filter:

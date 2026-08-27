@@ -1,658 +1,253 @@
-# Supervisión y Protección Térmica
+# 05 — Supervisión y Protección Térmica
+
+**Fecha:** 26 de agosto de 2026
+**Versión:** 0.5.1
+**Estado:** Consolidado / Documentación oficial
+**Módulo:** Infraestructura / Protección Térmica & Telemetría
+**Propósito:** Especificar la arquitectura de supervisión térmica desacoplada entre Windows y WSL2 Ubuntu, el servicio HTTP en Flask (`export_temp_server.py`), el watchdog preventivo (`thermal_watchdog.py`) y sus políticas de interrupción.
+
+---
+
+> **Resumen ejecutivo:**  
+> La ejecución intensiva de embeddings (`embed.py`) e inferencia local en WSL2 genera cargas sostenidas en el procesador del equipo anfitrión. Para prevenir sobrecalentamiento e inestabilidad del hardware sin degradar la lógica RAG, **Arquitectura_RAG_Termica** implementa un subsistema de supervisión térmica completamente desacoplado. Un servicio Flask en Windows (`export_temp_server.py`) expone la telemetría de `LibreHardwareMonitor` en el puerto `5005`, la cual es consumida en WSL2 por `thermal_watchdog.py`. Este calcula un promedio móvil y ejecuta detenciones preventivas atómicas (`pkill -f query.py` / `embed.py`) al alcanzar umbrales críticos.
+
+---
 
 ## 1. Introducción
 
 La ejecución del pipeline RAG puede generar una carga elevada sobre el procesador, especialmente durante tareas como:
 
-- generación de embeddings;
-- recuperación semántica;
-- construcción del contexto de trabajo;
-- inferencia mediante modelos LLM ejecutados localmente.
+* generación de embeddings y reconciliación vectorial (`embed.py`);
+* extracción determinista de símbolos de código fuente (`symbols_extractor.py`);
+* recuperación semántica y cálculo de similitud coseno (`query.py`);
+* inferencia mediante modelos LLM ejecutados localmente en Ollama.
 
 Con el objetivo de proteger el hardware utilizado durante el desarrollo, el proyecto incorpora una arquitectura de supervisión térmica completamente desacoplada del pipeline principal.
 
 Esta arquitectura permite:
 
-- obtener información real de los sensores del equipo;
-- supervisar continuamente la temperatura del procesador;
-- detectar condiciones térmicas críticas;
-- registrar eventos relevantes del sistema;
-- ejecutar acciones automáticas de protección cuando sea necesario.
+* obtener información real de los sensores del equipo;
+* supervisar continuamente la temperatura del procesador;
+* detectar condiciones térmicas críticas;
+* registrar eventos relevantes del sistema en `thermal_watchdog_log.txt`;
+* ejecutar acciones automáticas de protección cuando sea necesario.
 
 La supervisión térmica constituye un subsistema independiente del pipeline RAG y mantiene el mismo funcionamiento independientemente del backend de inferencia seleccionado (LOCAL o CLOUD). De esta forma, la protección del hardware permanece activa tanto cuando la generación de respuestas se realiza mediante Ollama como cuando se utiliza OpenRouter.
 
 ---
 
-# 2. Arquitectura de supervisión
+## 2. Arquitectura de supervisión distribuida
 
-La arquitectura térmica se encuentra separada de la lógica de recuperación del conocimiento y de la generación de respuestas.
-
-El flujo completo es el siguiente:
+La arquitectura térmica se encuentra estrictamente separada de la lógica de recuperación del conocimiento y de la generación de respuestas:
 
 ```text
-                 HARDWARE FÍSICO
-
-                       │
-                       ▼
-
-          LibreHardwareMonitor
-
-                       │
-                       ▼
-
-          export_temp_server.py
-
-                       │
-                 HTTP / JSON
-                       │
-                       ▼
-
-                 WSL2 Ubuntu
-
-                       │
-                       ▼
-
-          thermal_watchdog.py
-
-                       │
-              +--------+--------+
-              │                 │
-              ▼                 ▼
-
-          Estado normal   Estado crítico
-
-              │                 │
-              ▼                 ▼
-
-        Continúa RAG     Detiene query.py
+                                HARDWARE FÍSICO (Windows Anfitrión)
+                                                │
+                                                ▼
+                                      LibreHardwareMonitor
+                                                │
+                                                ▼
+                                      export_temp_server.py
+                       Ruta: E:\Developer\Tools\LibreHardwareMonitor\python
+                                                │
+                                                │ HTTP / JSON (:5005/data.json)
+                                                ▼
+                                     WSL2 Ubuntu (Terminal Linux)
+                       Ruta: ~/rag_maui_docs_for_rag/scripts/thermal_watchdog.py
+                                                │
+                                       ┌────────┴────────┐
+                                       ▼                 ▼
+                                 Estado Normal     Estado Crítico
+                                       │                 │
+                                       ▼                 ▼
+                                 Continúa RAG     Detiene query.py /
+                                                  embed.py (pkill)
 ```
 
-El watchdog se ejecuta como un proceso independiente y no forma parte del pipeline implementado por `query.py`.
+El watchdog se ejecuta como un proceso independiente en WSL2 y no forma parte del pipeline de código invocado por `query.py` o `embed.py`.
 
 ---
 
-# 3. Componente Windows
+## 3. Componentes en el entorno Windows
 
-## 3.1 LibreHardwareMonitor
-
+### 3.1 LibreHardwareMonitor
 LibreHardwareMonitor constituye la fuente primaria de información térmica utilizada por el sistema.
 
 Responsabilidades:
+* acceder a los sensores físicos del equipo;
+* obtener la temperatura en tiempo real del procesador;
+* publicar la información bruta mediante un servicio JSON interno (`http://localhost:8085/data.json`).
 
-- acceder a los sensores físicos del equipo;
-- obtener la temperatura del procesador;
-- publicar la información mediante un servicio JSON.
-
-Endpoint original:
-
-```text
-http://localhost:8085/data.json
-```
-
-El proyecto no consulta directamente este endpoint desde WSL2. En su lugar, utiliza un servicio intermedio que simplifica la información publicada y facilita la comunicación entre ambos entornos.
+El pipeline en WSL2 no consulta directamente este endpoint complejo para evitar acoplamiento con la estructura interna del JSON de LibreHardwareMonitor.
 
 ---
 
-# 4. Servicio export_temp_server.py
+## 4. Servicio `export_temp_server.py` (Windows)
 
-## Ubicación
-
+### Ubicación exacta en disco:
 ```text
 E:\Developer\Tools\LibreHardwareMonitor\python
 ```
 
----
-
-## Objetivo
-
-`export_temp_server.py` actúa como una capa de adaptación entre LibreHardwareMonitor y WSL2.
-
-Su función puede representarse mediante el siguiente flujo:
+### Objetivo
+`export_temp_server.py` actúa como un microservicio adaptador entre LibreHardwareMonitor y WSL2.
 
 ```text
-LibreHardwareMonitor
-        │
-        ▼
-
-JSON completo de sensores
-
-        │
-        ▼
-
-export_temp_server.py
-
-        │
-        ▼
-
-JSON simplificado
-
-        │
-        ▼
-
-Servicio HTTP para WSL2
+LibreHardwareMonitor (8085) ──> export_temp_server.py (Flask 5005) ──> /data.json ──> WSL2
 ```
 
-De esta manera, los componentes del pipeline RAG no necesitan conocer la estructura interna del JSON generado por LibreHardwareMonitor.
+### Responsabilidades
+* consultar periódicamente el JSON completo de LibreHardwareMonitor;
+* aislar el sensor correspondiente a la temperatura del procesador;
+* convertir el valor a una carga JSON simplificada;
+* publicar un servicio HTTP ligero mediante Flask en el puerto `5005`;
+* escribir automáticamente el archivo `windows_ip.txt` con la IP anfitriona.
 
----
-
-## Responsabilidades
-
-El servicio realiza las siguientes tareas:
-
-- consultar periódicamente el JSON generado por LibreHardwareMonitor;
-- localizar el sensor correspondiente a la temperatura del procesador;
-- convertir el valor a un formato numérico uniforme;
-- publicar un servicio HTTP mediante Flask;
-- generar automáticamente la información de conexión utilizada desde WSL2.
-
----
-
-## Sensor utilizado
-
-La implementación actual obtiene la temperatura desde el árbol de sensores:
+### Sensor procesado (Configuración típica)
+La implementación obtiene la temperatura desde el árbol de sensores de la placa base/CPU:
 
 ```text
-Nuvoton NCT6776F
-
-    │
+Nuvoton NCT6776F / Core Temperature
     └── Temperatures
-
-            │
-            └── Temperature #1
+            └── Temperature #1 (CPU Core Temp)
 ```
 
-La ubicación exacta del sensor puede variar dependiendo del hardware, aunque el diseño del sistema permite adaptar fácilmente este componente sin modificar el resto de la arquitectura.
-
----
-
-## Endpoint publicado
-
-El servicio expone el siguiente endpoint:
-
+### Endpoint publicado
 ```text
 http://IP_WINDOWS:5005/data.json
 ```
 
-Ejemplo de respuesta:
-
+Ejemplo de respuesta JSON simplificada:
 ```json
 {
     "id": 0,
     "Text": "CPU Temperature",
-    "Value": 45.0,
-    "Min": 0,
-    "Max": 100
+    "Value": 48.5,
+    "Min": 38.0,
+    "Max": 72.0
 }
 ```
 
-Este formato simplificado facilita el consumo de la información desde `thermal_watchdog.py`.
+---
+
+## 5. Descubrimiento automático de la IP de Windows
+
+La dirección IP del host Windows puede variar entre reinicios o interfaces de red. Para evitar la modificación manual de scripts en WSL2, el sistema implementa un esquema de descubrimiento dinámico:
+
+1. **Escritura Automática (Windows):** `export_temp_server.py` detecta la IP local de Windows y la escribe en:
+   ```text
+   E:\Developer\Tools\LibreHardwareMonitor\python\windows_ip.txt
+   ```
+   *(Ejemplo de contenido: `192.168.1.37`)*.
+
+2. **Lectura y Fallback (WSL2):** Al iniciar `thermal_watchdog.py`:
+   * intenta leer la IP desde el archivo compartido o variable de entorno;
+   * si no está disponible, resuelve automáticamente la dirección mediante el gateway por defecto de WSL2 (`ip route | grep default`).
 
 ---
 
-# 5. Descubrimiento automático de la IP de Windows
+## 6. Thermal Watchdog (`thermal_watchdog.py` en WSL2)
 
-La dirección IP del host Windows puede cambiar entre reinicios o sesiones de trabajo.
-
-Para evitar configuraciones manuales repetitivas, el sistema implementa un mecanismo de descubrimiento automático.
-
-Archivo generado:
-
+### Ubicación exacta en disco:
 ```text
-windows_ip.txt
+/home/manuelc/rag_maui_docs_for_rag/scripts/thermal_watchdog.py
 ```
 
-Ubicación:
+### Objetivo
+`thermal_watchdog.py` es el daemon en WSL2 responsable de supervisar continuamente la temperatura y aplicar acciones atómicas de protección.
 
-```text
-E:\Developer\Tools\LibreHardwareMonitor\python
-```
+Es completamente independiente de:
+* `query.py` y `embed.py`;
+* `logger.py`;
+* `llm_backend.py`;
+* Ollama local y OpenRouter cloud.
 
-Ejemplo:
-
-```text
-192.168.1.36
-```
-
----
-
-## Uso desde WSL2
-
-Durante su inicialización, `thermal_watchdog.py` intenta localizar la dirección IP del equipo Windows siguiendo este orden:
-
-1. Leer el archivo:
-
-```text
-windows_ip.txt
-```
-
-2. Si el archivo existe:
-
-```text
-IP Windows detectada desde archivo.
-```
-
-3. Si el archivo no existe:
-
-- utilizar automáticamente el gateway de WSL2 como mecanismo alternativo.
-
-Este procedimiento evita depender de configuraciones manuales y mejora la portabilidad del entorno.
-
----
-
-# 6. Thermal Watchdog
-
-## Archivo
-
-```text
-thermal_watchdog.py
-```
-
----
-
-## Ubicación
-
-```text
-/home/manuelc/rag_maui_docs_for_rag/scripts
-```
-
----
-
-## Objetivo
-
-`thermal_watchdog.py` es el componente responsable de supervisar continuamente la temperatura del procesador y proteger la ejecución del sistema frente a condiciones de sobretemperatura.
-
-Su funcionamiento es completamente independiente de:
-
-- `query.py`;
-- `logger.py`;
-- `llm_backend.py`;
-- Ollama;
-- OpenRouter.
-
-Gracias a esta separación, cualquier modificación del pipeline RAG puede realizarse sin afectar la lógica de supervisión térmica.
-
----
-
-## Funciones principales
-
-Entre sus responsabilidades se encuentran:
-
-- consultar periódicamente la temperatura del procesador;
-- calcular un promedio móvil;
-- clasificar el estado térmico del sistema;
-- registrar eventos relevantes;
-- ejecutar acciones preventivas cuando se superan los umbrales configurados.
-
----
-
-### Lectura térmica
-
-La información se obtiene consultando:
-
-```text
-http://IP_WINDOWS:5005/data.json
-```
-
-mediante:
-
-```python
-requests.get()
-```
-
----
-
-### Promedio móvil
-
-Para evitar decisiones basadas en picos instantáneos de temperatura, el watchdog utiliza una ventana móvil:
+### Algoritmo de Promedio Móvil
+Para evitar falsas interrupciones provocadas por picos térmicos instantáneos de corta duración, el watchdog utiliza una ventana de lectura móvil:
 
 ```python
 WINDOW_SIZE = 5
 ```
 
-Cada nueva lectura actualiza el promedio utilizado para clasificar el estado térmico del sistema.
+Cada nueva lectura HTTP actualiza la cola circular y evalúa la media ponderada antes de modificar el estado térmico.
 
 ---
 
-# 7. Umbrales térmicos
+## 7. Umbrales térmicos y niveles de riesgo
 
-Configuración actual:
+La configuración vigente en `thermal_watchdog.py` establece las siguientes fronteras de operación:
 
-| Parámetro | Valor |
-|-----------|------:|
-| TEMP_WARNING | 58 °C |
-| TEMP_CRITICAL | 62 °C |
-| TEMP_HARD_LIMIT | 70 °C |
-| TEMP_RECOVERY | 58 °C |
-
-Estos valores permiten distinguir diferentes niveles de riesgo y aplicar acciones progresivas de protección.
-
----
-
-# 8. Estados térmicos
-
-## NORMAL
-
-Condición:
-
-```text
-Temperatura dentro del rango seguro.
-```
-
-Acción:
-
-```text
-El pipeline continúa ejecutándose normalmente.
-```
+| Parámetro | Valor Ponderado | Acción del Sistema |
+| :--- | :---: | :--- |
+| **`TEMP_NORMAL`** | $< 58.0\ ^\circ\text{C}$ | Operación normal. El pipeline RAG y los scripts de embeddings ejecutan sin restricción. |
+| **`TEMP_WARNING`** | $\ge 58.0\ ^\circ\text{C}$ | Estado de advertencia. Se intensifica la frecuencia de muestreo y se registra la tendencia. |
+| **`TEMP_CRITICAL`** | $\ge 62.0\ ^\circ\text{C}$ | **Estado crítico.** Se activa el protocolo de interrupción atómica sobre los procesos en WSL2. |
+| **`TEMP_HARD_LIMIT`** | $\ge 70.0\ ^\circ\text{C}$ | **Límite duro.** Interrupción de emergencia inmediata de todo el entorno RAG en WSL2. |
+| **`TEMP_RECOVERY`** | $< 58.0\ ^\circ\text{C}$ | Restablecimiento del estado. Se permite el reinicio de tareas tras verificar enfriamiento sostenido. |
 
 ---
 
-## WARNING
-
-Condición:
+## 8. Estados y acciones de protección
 
 ```text
-Promedio móvil >= TEMP_WARNING
+[ NORMAL ]  ──( Temp >= 58°C )──>  [ WARNING ]  ──( Temp >= 62°C )──>  [ CRITICAL / HARD_LIMIT ]
+    ▲                                                                               │
+    │                                                                               ▼
+    └─────────────────────── ( Temp < 58°C Sostenido ) ───────────────── Exec: pkill -f query.py
 ```
 
-Acción:
+### Protocolo de Interrupción Atómica
+Cuando el estado alcanza `CRITICAL` o `HARD_LIMIT`, el watchdog no solicita un apagado suave que pueda demorar durante un bucle de inferencia; en su lugar ejecuta:
 
-```text
-Mantener la supervisión y continuar monitoreando la evolución de la temperatura.
-```
-
----
-
-## CRITICAL
-
-Condición:
-
-```text
-Temperatura >= TEMP_CRITICAL
-```
-
-Acciones:
-
-- registrar el evento crítico;
-- activar el estado de protección;
-- finalizar la ejecución de `query.py` para evitar un incremento adicional de temperatura.
-
----
-
-## HARD LIMIT
-
-Condición:
-
-```text
-Temperatura >= TEMP_HARD_LIMIT
-```
-
-Acción:
-
-```text
-Aplicar protección inmediata independientemente del estado previo del sistema.
-```
----
-# 9. Integración con el pipeline RAG
-
-La supervisión térmica constituye una capa completamente independiente del pipeline RAG.
-
-Mientras `query.py` coordina la recuperación del conocimiento, construye el contexto y delega la inferencia al backend configurado, `logger.py` registra cronológicamente la ejecución y `thermal_watchdog.py` supervisa continuamente el estado térmico del equipo.
-
-Esta separación mantiene desacopladas las responsabilidades de:
-
-- recuperación del conocimiento;
-- generación de respuestas;
-- observabilidad del sistema;
-- protección del hardware.
-
-La arquitectura puede resumirse de la siguiente manera:
-
-```text
-                    query.py
-                        │
-        ┌───────────────┼────────────────┐
-        │               │                │
-        ▼               ▼                ▼
-
- Recuperación RAG   logger.py    llm_backend.py
-                                        │
-                               LOCAL / CLOUD
-                                        │
-                                        ▼
-                                 Respuesta LLM
-
-
-          thermal_watchdog.py
-        (proceso independiente)
-
-                  │
-                  ▼
-
-      Supervisión continua del hardware
-
-                  │
-                  ▼
-
-      Protección preventiva del sistema
-```
-
-`thermal_watchdog.py` no participa en la lógica funcional del pipeline y tampoco necesita conocer el backend de inferencia seleccionado.
-
-Su única responsabilidad consiste en supervisar las condiciones térmicas del sistema y ejecutar acciones preventivas cuando sea necesario.
-
-Esta característica permite proteger tanto las consultas ejecutadas mediante Ollama como aquellas que utilizan OpenRouter u otros proveedores que puedan incorporarse en el futuro.
-
----
-
-# 10. Observabilidad y registro de la ejecución
-
-## logger.py
-
-El mecanismo de observabilidad del proyecto se encuentra centralizado en `logger.py`.
-
-Su responsabilidad consiste en registrar cronológicamente la ejecución de cada consulta y calcular automáticamente las métricas de rendimiento del pipeline, sin modificar el comportamiento funcional del sistema.
-
-Entre la información registrada se encuentran:
-
-- inicio y finalización de la sesión;
-- modo de operación seleccionado;
-- backend de inferencia utilizado;
-- modelo de lenguaje empleado;
-- secuencia de eventos del pipeline;
-- métricas automáticas de rendimiento.
-
-Las métricas actualmente calculadas son:
-
-| Métrica | Descripción |
-|----------|-------------|
-| EMBEDDING_TIME | Tiempo de generación del embedding de la consulta. |
-| SEARCH_TIME | Tiempo empleado por la recuperación semántica. |
-| LLM_TIME | Tiempo consumido por el backend de inferencia. |
-| PIPELINE_TIME | Tiempo total del pipeline desde la recepción de la consulta hasta la presentación de la respuesta. |
-
-Durante tareas de desarrollo también es posible registrar información adicional de depuración, como los *chunks* recuperados por la búsqueda semántica, mediante funciones específicas del logger.
-
-Esta información de depuración es opcional y no modifica el funcionamiento del pipeline RAG.
-
----
-
-# 11. Detención automática
-
-Cuando el watchdog detecta una condición térmica crítica, ejecuta automáticamente el mecanismo de protección configurado.
-
-En la implementación actual la acción consiste en finalizar la ejecución del proceso:
-
-```text
-query.py
-```
-
-mediante:
-
-```text
+```bash
 pkill -f query.py
+pkill -f embed.py
 ```
 
-Como resultado:
-
-```text
-Proceso RAG detenido preventivamente.
-```
-
-La lógica de protección permanece completamente desacoplada de `query.py`, por lo que el pipeline no necesita implementar verificaciones térmicas internas.
+Esta acción libera inmediatamente el uso del CPU en WSL2, permitiendo que el sistema disipe calor antes de que intervenga el *thermal throttling* del hardware anfitrión.
 
 ---
 
-# 12. Registro de eventos críticos
+## 9. Registro de auditoría térmica (`thermal_watchdog_log.txt`)
 
-Los eventos relacionados con la supervisión térmica se almacenan en:
+Todos los eventos térmicos, cambios de estado y ejecuciones de interrupción se registran de forma independiente en:
 
 ```text
 thermal_watchdog_log.txt
 ```
 
-Entre la información registrada se incluye:
+*(Nota: Este archivo de log está excluido del control de versiones mediante `.gitignore`).*
 
-- fecha y hora del evento;
-- motivo de la activación;
-- temperatura instantánea;
-- promedio móvil;
-- endpoint utilizado;
-- acción ejecutada.
-
-Ejemplo simplificado:
+Ejemplo de registro de evento crítico:
 
 ```text
+============================================================
 THERMAL WATCHDOG EVENT
-
-Fecha:
-2026-07-28 14:30:00
-
-Motivo:
-TEMP_CRITICAL
-
-Temperatura:
-63.5 °C
-
-Promedio:
-61.9 °C
-
-Acción:
-pkill -f query.py
+Fecha: 2026-08-26 15:42:10
+Estado: TEMP_CRITICAL
+Temperatura Instantánea: 63.8 °C
+Promedio Móvil (N=5): 62.4 °C
+Endpoint Consultado: http://192.168.1.37:5005/data.json
+Acción Ejecutada: pkill -f query.py (Proceso detenido preventivamente)
+============================================================
 ```
 
-Este registro facilita el análisis posterior de eventos relacionados con la protección térmica del sistema.
+---
+
+## 10. Principios de diseño aplicados
+
+1. **Separación de Responsabilidades:** `export_temp_server.py` extrae telemetría; `thermal_watchdog.py` evalúa métricas; `query.py` procesa RAG.
+2. **Total Desacoplamiento:** Ningún script de RAG (`query.py`, `embed.py`, `llm_backend.py`) importa o depende de librerías térmicas.
+3. **Resiliencia Operativa:** Si el servidor térmico en Windows no está activo, `thermal_watchdog.py` emite una advertencia en log sin bloquear la ejecución manual del usuario, permitiendo el uso bajo supervisión personal.
+4. **Independencia del Backend:** Protege el CPU anfitrión por igual, ya sea que la inferencia se ejecute localmente con Ollama (`llama3.2:3b`) o mediante API cloud con OpenRouter.
 
 ---
 
-# 13. Recuperación
+## 11. Estado actual del subsistema térmico
 
-Después de una condición crítica, el watchdog permanece supervisando la temperatura del procesador.
+Al **26 de agosto de 2026**, la protección térmica ofrece:
+* **Microservicio en Windows:** `export_temp_server.py` operativo en `E:\Developer\Tools\LibreHardwareMonitor\python` expuesto en puerto `5005`.
+* **Descubrimiento de IP:** Sincronización automática a través de `windows_ip.txt` (`192.168.1.37`).
+* **Daemon en WSL2:** `thermal_watchdog.py` ubicado en `~/rag_maui_docs_for_rag/scripts/` con promediado de 5 muestras y límites de 58°C (Warning) / 62°C (Critical) / 70°C (Hard Limit).
+* **Pruebas de Aborto Validadas:** Verificación de interrupción atómica (`pkill`) registrada en la suite de pruebas del proyecto (`2026-07-20_prueba02_backend_local_qwen2.5_abort_termico.md`).
 
-La recuperación se considera completada cuando se cumplen simultáneamente las siguientes condiciones:
-
-```text
-Temperatura < TEMP_RECOVERY
-```
-
-y
-
-```text
-Promedio móvil < TEMP_WARNING
-```
-
-Cuando ambas condiciones se satisfacen, el sistema abandona el estado de protección y continúa con la supervisión normal.
-
-Este mecanismo evita reanudar inmediatamente la ejecución mientras la temperatura aún presenta una tendencia elevada.
-
----
-
-# 14. Filosofía de diseño
-
-La arquitectura de supervisión térmica fue diseñada siguiendo principios de modularidad, bajo acoplamiento y separación de responsabilidades.
-
-## Separación de responsabilidades
-
-Cada componente mantiene una función claramente definida dentro del sistema:
-
-```text
-LibreHardwareMonitor
-        │
-        ▼
-Adquisición de datos
-del hardware
-
-        │
-        ▼
-export_temp_server.py
-        │
-        ▼
-Adaptación y publicación
-mediante HTTP (Flask)
-
-        │
-        ▼
-thermal_watchdog.py
-        │
-        ▼
-Supervisión y toma
-de decisiones
-
-        │
-        ▼
-Protección preventiva
-del pipeline RAG
-```
-
-Esta organización facilita el mantenimiento del sistema y permite evolucionar cualquiera de los componentes sin afectar significativamente al resto de la arquitectura.
-
----
-
-## Desacoplamiento
-
-La supervisión térmica se ejecuta como un proceso completamente independiente del pipeline RAG.
-
-Esta decisión mantiene separadas las responsabilidades relacionadas con:
-
-- adquisición de datos del hardware;
-- supervisión térmica;
-- recuperación del conocimiento;
-- inferencia mediante modelos de lenguaje;
-- observabilidad del sistema.
-
-Como consecuencia, `query.py`, `llm_backend.py` y `logger.py` permanecen libres de lógica específica relacionada con sensores o mecanismos de protección térmica.
-
----
-
-## Bajo acoplamiento
-
-El pipeline principal no necesita conocer detalles de implementación relacionados con:
-
-- sensores físicos;
-- fabricantes del hardware;
-- chips de monitorización;
-- LibreHardwareMonitor;
-- mecanismos de adquisición de temperatura.
-
-La única interacción entre ambos subsistemas consiste en la acción preventiva ejecutada por `thermal_watchdog.py` cuando se detectan condiciones térmicas críticas.
-
-Esta arquitectura facilita la reutilización de los componentes y permite sustituir el mecanismo de adquisición de datos térmicos sin modificar el funcionamiento del pipeline RAG.
-
----
-
-# 15. Estado actual
-
-Al 28 de julio de 2026, el sistema proporciona:
-
-- monitoreo continuo de la temperatura mediante LibreHardwareMonitor;
-- comunicación entre Windows y WSL2 mediante un servicio HTTP basado en Flask;
-- detección automática de la dirección IP del host Windows;
-- supervisión independiente mediante `thermal_watchdog.py`;
-- protección automática frente a condiciones de sobretemperatura;
-- integración completamente desacoplada respecto al pipeline RAG;
-- compatibilidad con los backends de inferencia LOCAL (Ollama) y CLOUD (OpenRouter);
-- registro independiente de eventos térmicos y métricas de ejecución.
-
-La arquitectura alcanzada permite proteger el hardware durante la ejecución del sistema sin interferir con la recuperación del conocimiento, la construcción del contexto ni la generación de respuestas.
-
-La supervisión térmica continúa evolucionando de forma independiente del resto del proyecto, manteniendo como objetivo principal preservar la estabilidad del entorno de ejecución y facilitar futuras mejoras sin comprometer el diseño modular de la arquitectura.

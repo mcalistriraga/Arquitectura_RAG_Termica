@@ -1,519 +1,292 @@
-# Entorno de Ejecución y Backends de Inferencia
+# 04 — Entorno de Ejecución y Backends de Inferencia
+
+**Fecha:** 26 de agosto de 2026
+**Versión:** 0.5.1
+**Estado:** Consolidado / Documentación oficial
+**Módulo:** Infraestructura / Entorno WSL2 & Backends de Inferencia
+**Propósito:** Especificar la configuración del entorno Windows anfitrión, el entorno WSL2 Ubuntu, la ubicación exacta de los scripts de ejecución, la estructura real del workspace aislado y la capa de abstracción de inferencia (`llm_backend.py`).
+
+---
+
+> **Resumen ejecutivo:**  
+> **Arquitectura_RAG_Termica** opera sobre una infraestructura híbrida dividida en dos entornos de ejecución: un entorno en **Windows** dedicado a la telemetría de hardware (`export_temp_server.py`) y un entorno en **WSL2 Ubuntu** (`/home/manuelc/rag_maui_docs_for_rag/scripts`) donde residen los componentes principales del pipeline. La base de conocimiento activa del proyecto objetivo (**MauiAppGestorMovil**) se encuentra completamente desacoplada en `~/rag_workspace/MauiAppGestorMovil`, manteniendo aislados el código fuente C#/.NET MAUI y los índices de conocimiento vectoriales y estructurales (`embeddings.jsonl` y `symbols_raw.jsonl`).
+
+---
 
 ## 1. Introducción
 
-El proyecto utiliza un entorno de ejecución basado en **WSL2 Ubuntu**, donde se ejecutan los componentes principales del pipeline RAG y los modelos de inteligencia artificial.
+El proyecto utiliza un entorno de ejecución distribuido entre **Windows** (anfitrión) y **WSL2 Ubuntu**, donde se ejecutan los scripts del pipeline RAG, el motor de extracción de símbolos (KS2) y los modelos de inteligencia artificial.
 
-La arquitectura ha sido diseñada para separar claramente la **recuperación del conocimiento**, la **generación de respuestas**, la **observabilidad** y la **supervisión térmica**, permitiendo que cada componente evolucione de forma independiente.
-
-Actualmente la recuperación documental permanece completamente local, mientras que la inferencia puede realizarse mediante distintos proveedores utilizando una capa de abstracción implementada en `llm_backend.py`.
+La arquitectura se ha diseñado para separar strictly:
+* los servicios de telemetría térmica en Windows (`export_temp_server.py`);
+* el motor de scripts del asistente en WSL2 (`/home/manuelc/rag_maui_docs_for_rag/scripts`);
+* la preparación y filtrado del espacio de trabajo del proyecto objetivo (`knowledge_filter.py`);
+* la extracción determinista de símbolos (`symbols_extractor.py` con `csharp_parser.py` v2.1.5);
+* la recuperación semántica y persistencia vectorial (`embed.py` / `embeddings.jsonl`);
+* la generación de respuestas mediante una capa de abstracción de inferencia (`llm_backend.py`);
+* la observabilidad del pipeline (`logger.py`);
+* la supervisión térmica preventiva (`thermal_watchdog.py`).
 
 Actualmente el proyecto soporta dos modalidades de inferencia:
+* **Backend LOCAL**, mediante Ollama.
+* **Backend CLOUD**, mediante OpenRouter.
 
-- **Backend LOCAL**, mediante Ollama.
-- **Backend CLOUD**, mediante OpenRouter.
-
-Esta arquitectura híbrida permite ejecutar completamente el sistema en un entorno local cuando el hardware lo permite o utilizar modelos remotos cuando se requiere mayor capacidad de procesamiento, sin modificar el flujo principal del pipeline.
-
----
-
-# 2. Arquitectura del entorno
-
-El entorno de ejecución está organizado en dos niveles principales: el sistema operativo anfitrión (Windows) y el entorno Linux proporcionado por WSL2.
-
-```text
-                    WINDOWS
-
-               Hardware físico
-
-                      │
-                      ▼
-
-                WSL2 Ubuntu
-
-                      │
-        ┌─────────────┴─────────────┐
-        ▼                           ▼
-
-     Entorno Python             Ollama
-
-        │
-        ▼
-
-     Pipeline RAG
-
-        │
-        ▼
-
-     query.py
-        │
-        ├─────────────── Recuperación local
-        │
-        ▼
- Construcción del contexto
-        │
-        ▼
-  llm_backend.py
-        │
-   ┌────┴─────┐
-   ▼          ▼
-
-Ollama   OpenRouter
-
-   │          │
-   └────┬─────┘
-        ▼
-
- Respuesta final
-```
-
-El procesamiento documental, la recuperación semántica y la construcción del contexto se ejecutan íntegramente en WSL2.
-
-La supervisión térmica utiliza servicios auxiliares ejecutados en Windows y se comunica con WSL2 mediante HTTP.
+Esta arquitectura híbrida permite ejecutar el sistema 100% local cuando el hardware lo soporta o derivar la inferencia a modelos remotos de alta capacidad cuando se requieren respuestas complejas, sin alterar la recuperación del conocimiento local.
 
 ---
 
-# 3. Sistema operativo
+## 2. Arquitectura del entorno distribuido
 
-## WSL2 Ubuntu
-
-El entorno Linux utilizado por el proyecto se ejecuta mediante:
+El sistema distingue tres ubicaciones físicas/lógicas principales en la máquina anfitriona:
 
 ```text
-Windows Subsystem for Linux 2 (WSL2)
+                                WINDOWS (Servicios Térmicos)
+                    Ruta: E:\Developer\Tools\LibreHardwareMonitor\python
+                                         │
+                                         ├─ LibreHardwareMonitor.exe
+                                         ├─ export_temp_server.py (Flask HTTP :5005)
+                                         ├─ start_server.bat / stop_server.bat
+                                         └─ windows_ip.txt ("192.168.1.37")
+                                                 │
+                                                 │ HTTP / JSON
+                                                 ▼
+                                  WSL2 UBUNTU (Scripts del Asistente)
+                       Ruta: ~/rag_maui_docs_for_rag/scripts
+                                         │
+         ┌───────────────────────────────┼───────────────────────────────┐
+         ▼                               ▼                               ▼
+  Entorno Python                   Ollama Daemon                 Supervisión Térmica
+   (venv_rag)                   (nomic-embed-text)              (thermal_watchdog.py)
+         │                               │                               │
+         ▼                               ▼                               │
+   Pipeline RAG                  Recuperación Local                      │
+ (KS2 & Parsers)                 (embeddings.jsonl)                      │
+         │                               │                               │
+         └───────────────┬───────────────┘                               │
+                         ▼                                               ▼
+             Construcción del contexto ──────────────────────> Interrupción Preventiva
+                         │                                    en Sobretemperatura
+                         ▼
+                  llm_backend.py
+                   /          \
+                  /            \
+                 v              v
+            Ollama Local   OpenRouter Cloud
+                 │              │
+                 └──────┬───────┘
+                        ▼
+                 Respuesta final
+                (query_log.txt)
+                         │
+                         ▼
+                               WSL2 UBUNTU (Target Project Workspace)
+                           Ruta: ~/rag_workspace/MauiAppGestorMovil
 ```
-
-Dentro de este entorno se ejecutan los componentes principales del sistema.
-
-Entre sus responsabilidades se encuentran:
-
-- ejecución de los scripts Python;
-- administración del entorno virtual;
-- ejecución del pipeline RAG;
-- comunicación con Ollama;
-- acceso al backend cloud cuando se encuentra habilitado;
-- gestión de los archivos generados durante la indexación documental.
-
-Esta separación permite mantener el desarrollo de la aplicación en un entorno Linux sin perder acceso al hardware y a las herramientas disponibles en Windows.
 
 ---
 
-# 4. Estructura del entorno
+## 3. Distribución de componentes y directorios
 
-El proyecto se organiza en un directorio principal que contiene el código fuente, los archivos generados durante la indexación y el entorno virtual de Python.
+El proyecto organiza sus scripts y datos en tres ubicaciones físicas bien delimitadas:
 
-Durante el desarrollo se ha utilizado, entre otros, el directorio:
+### 3.1 Entorno Windows (Telemetría de Hardware)
+* **Directorio:** `E:\Developer\Tools\LibreHardwareMonitor\python`
+* **Propósito:** Captura de datos de los sensores térmicos físicos del procesador mediante `LibreHardwareMonitor` y publicación de un API REST HTTP.
 
-```text
-/home/manuelc/rag_maui_docs_for_rag
-```
-
-Una estructura simplificada es la siguiente:
-
-```text
-rag_maui_docs_for_rag
-
-├── scripts/
-│
-├── chunks/
-│
-├── docs/
-│
-├── embeddings.jsonl
-│
-├── symbols.jsonl
-│
-├── output_raw.jsonl
-│
-└── venv_rag/
-```
-
-La estructura puede evolucionar conforme se incorporen nuevos componentes al proyecto o nuevas bases de conocimiento.
+Archivos contenidos:
+* `export_temp_server.py`: Servidor ligero Flask en puerto 5005.
+* `start_server.bat`: Script de inicio del servidor Flask en Windows.
+* `stop_server.bat`: Script de detención del servidor en Windows.
+* `windows_ip.txt`: Archivo generado automáticamente con la IP anfitriona (ej. `192.168.1.37`).
 
 ---
 
-# 5. Entorno Python
+### 3.2 Entorno WSL2 — Scripts del Asistente RAG
+* **Directorio Base:** `\\wsl.localhost\Ubuntu\home\manuelc\rag_maui_docs_for_rag\scripts`
+* **Subdirectorio de Parsers:** `~/rag_maui_docs_for_rag/scripts/parsers/`
+* **Propósito:** Alojamiento de todo el motor ejecutable del asistente técnico RAG.
 
-El proyecto utiliza un entorno virtual independiente para aislar las dependencias del sistema.
+Archivos principales en `scripts/`:
+* `knowledge_filter.py` (v1.7): Filtrado seguro de espacio de trabajo con guarda `is_safe_to_delete()`.
+* `symbols_extractor.py` (v1.1): Extractor determinista con carga dinámica via `importlib`.
+* `ingest.py`: Ingestión documental y etiquetado por capas.
+* `chunk.py`: Fragmentador semántico de documentos.
+* `embed.py`: Generador y reconciliador de índices vectoriales.
+* `query.py`: Coordinador principal del pipeline RAG y formateador de prompts.
+* `llm_backend.py`: Capa de abstracción para Ollama (Local) y OpenRouter (Cloud).
+* `logger.py`: Observabilidad, registro de métricas y función `log_debug()`.
+* `thermal_watchdog.py`: Monitor continuo que consulta el servicio Flask en Windows.
+* `monitor_temperatura.py` / `test_config.py` / `config_loader.py`: Scripts auxiliares y de diagnóstico.
+* `parsers/`: Directorio especializado que alberga los parsers por lenguaje, incluyendo `csharp_parser.py` (v2.1.5).
 
-Nombre del entorno:
+---
+
+### 3.3 Entorno WSL2 — Workspace del Proyecto Objetivo (`Target Project`)
+* **Directorio Base:** `\\wsl.localhost\Ubuntu\home\manuelc\rag_workspace`
+* **Caso de Prueba Activo:** `MauiAppGestorMovil`
+* **Propósito:** Alojamiento aislado del proyecto asistido (.NET MAUI) y de su base de conocimiento estructurada.
+
+Árbol de directorios real (`~/rag_workspace/MauiAppGestorMovil`):
 
 ```text
-venv_rag
+~/rag_workspace/MauiAppGestorMovil
+├── knowledge/
+│   ├── embeddings/
+│   │   ├── embeddings.jsonl                          # Índice vectorial activo (57 entidades)
+│   │   ├── embeddings.pre-ADR012-2026-08-12.jsonl   # Respaldo histórico ADR-012
+│   │   └── embeddings.pre-v2.2-2026-08-12.jsonl     # Respaldo histórico v2.2
+│   └── symbols/
+│       └── symbols_raw.jsonl                         # 57 símbolos C# extraídos por KS2
+├── knowledge_policy.conf                             # Políticas v1.2 (Exclusión de Deprecated/Backups)
+├── project.conf                                       # Configuración del workspace (workspace_path)
+└── source/                                            # Código fuente C#/.NET MAUI (82 archivos, 27 carpetas)
+    ├── ARQUITECTURA_DETALLADA.md
+    ├── CHANGELOG.md
+    ├── INSTRUCCIONES_RECONSTRUCCION.md
+    ├── README.md
+    ├── Controls/
+    │   └── BotonPersonalizado.cs
+    ├── Converters/
+    │   ├── BoolToFlechaConverter.cs
+    │   ├── IntIncrementConverter.cs
+    │   ├── IntToBoolConverter.cs
+    │   ├── IntToThicknessConverter.cs
+    │   └── NullToBooleanConverter.cs
+    ├── DatosIniciales/ (Excluido de indexación por política)
+    │   ├── categorias.json
+    │   └── productos.json
+    ├── Helpers/
+    │   ├── AppNavigator.cs
+    │   ├── AppState.cs
+    │   ├── CategoriaHelper.cs
+    │   ├── CloseTecladoHelper.cs
+    │   ├── DecimalHelper.cs
+    │   ├── Logger.cs
+    │   └── PropiedadesHelper.cs
+    ├── Messages/
+    │   ├── CategoriaMessages.cs
+    │   └── ProductoAgregadoMessage.cs
+    ├── Models/
+    │   ├── Categoria.cs
+    │   ├── CategoriaNodo.cs
+    │   ├── Producto.cs
+    │   └── Propiedad.cs
+    ├── Platforms/
+    │   ├── Android/ (MainActivity.cs, MainApplication.cs)
+    │   ├── MacCatalyst/ (AppDelegate.cs, Program.cs)
+    │   ├── Tizen/ (Main.cs)
+    │   ├── Windows/ (App.xaml, App.xaml.cs)
+    │   └── iOS/ (AppDelegate.cs, Program.cs)
+    ├── Repositories/
+    │   └── SQLite/ (CategoriaSQLiteRepository.cs, ProductoSQLiteRepository.cs)
+    ├── Resources/
+    │   └── Styles/ (Colors.xaml, Styles.xaml)
+    ├── Services/
+    │   ├── ICategoriaRepository.cs
+    │   ├── ICategoriaService.cs
+    │   └── InicializadorDatos.cs
+    ├── ViewModels/
+    │   ├── AgregarProductoViewModel.cs
+    │   ├── EditarCategoriaViewModel.cs
+    │   ├── FrameDashboardViewModel.cs
+    │   ├── GestionDeCategoriasViewModel.cs
+    │   ├── GestionDeProductosViewModel.cs
+    │   ├── Helpers/ (BaseViewModel.cs)
+    │   └── SeleccionarCategoriaProductoViewModel.cs
+    └── Views/ (Vistas XAML y Code-Behind .xaml.cs)
+        ├── AgregarCategoria.xaml / .xaml.cs
+        ├── AgregarProducto.xaml / .xaml.cs
+        ├── AgregarSubcategoria.xaml / .xaml.cs
+        ├── CargandoApp.xaml / .xaml.cs
+        ├── Controls/ (CategoriaItemSeleccionView, CategoriaItemView)
+        ├── DetallesDelProducto.xaml / .xaml.cs
+        ├── EditarCategoria.xaml / .xaml.cs
+        ├── EditarProducto.xaml / .xaml.cs
+        ├── EncabezadoEmpresa.xaml / .xaml.cs
+        ├── FrameDashboard.xaml / .xaml.cs
+        ├── GestionDeCategorias.xaml / .xaml.cs
+        ├── GestionDeProductos.xaml / .xaml.cs
+        └── SeleccionarCategoriaProducto.xaml / .xaml.cs
 ```
 
-Activación:
+---
+
+## 4. Entorno Python y dependencias
+
+El motor ejecutable en WSL2 aísla sus librerías mediante un entorno virtual dedicado.
+
+* **Nombre del entorno:** `venv_rag`
+* **Ubicación recomendada:** `~/rag_maui_docs_for_rag/scripts/venv_rag`
+* **Activación:**
+  ```bash
+  source ~/rag_maui_docs_for_rag/scripts/venv_rag/bin/activate
+  ```
+* **Versión de Python:** Python 3.12.x
+
+---
+
+## 5. Layer de abstracción del backend (`llm_backend.py`)
+
+La comunicación con los modelos de lenguaje se centraliza en `llm_backend.py` dentro de `scripts/`. Este módulo desacopla por completo la recuperación de información del motor de generación.
+
+```text
+query.py  ──> Contexto RAG + Prompt  ──> llm_backend.py ──┬──> Ollama (HTTP 11434)
+                                                          └──> OpenRouter (HTTPS API)
+```
+
+---
+
+## 6. Backend LOCAL (Ollama) y Backend CLOUD (OpenRouter)
+
+### Backend LOCAL (Ollama)
+* **Endpoint:** `http://localhost:11434`
+* **Modelos configurados:**
+  * Embeddings: `nomic-embed-text`
+  * Depuración/Código: `qwen2.5-coder:1.5b`
+  * Razonamiento: `llama3.2:3b`
+
+### Backend CLOUD (OpenRouter)
+* **Autenticación:** Variable de entorno `OPENROUTER_API_KEY`.
+* **Seguridad y Privacidad:** La base vectorial (`embeddings.jsonl`) y el árbol de símbolos (`symbols_raw.jsonl`) residen 100% en WSL2 (`~/rag_workspace/MauiAppGestorMovil/knowledge/`); el servicio cloud solo recibe el fragmento de contexto empaquetado para la consulta activa.
+
+---
+
+## 7. Comandos de operación técnica del entorno
+
+Para ejecutar el pipeline RAG desde la terminal WSL2:
 
 ```bash
+# 1. Navegar al directorio base de scripts
+cd ~/rag_maui_docs_for_rag/scripts
+
+# 2. Activar el entorno virtual
 source venv_rag/bin/activate
-```
 
----
+# 3. Ejecutar el filtrado del workspace (knowledge_filter.py v1.7)
+python3 knowledge_filter.py
 
-## Versión de Python
+# 4. Extraer símbolos del proyecto objetivo (symbols_extractor.py v1.1)
+python3 symbols_extractor.py
 
-La implementación actual utiliza Python 3.12.x.
+# 5. Generar y reconciliar índices vectoriales (embed.py)
+python3 embed.py
 
-La versión exacta puede variar según el entorno de desarrollo, manteniéndose dentro de la serie 3.12.
-
----
-
-## Bibliotecas utilizadas
-
-Entre las dependencias empleadas por los componentes principales del proyecto se encuentran:
-
-| Biblioteca | Propósito |
-|-------------|-----------|
-| requests | Comunicación HTTP con Ollama, OpenRouter y servicios auxiliares. |
-| numpy | Operaciones sobre vectores y cálculo de similitud coseno. |
-| json | Lectura y escritura de archivos JSON y JSONL. |
-| re | Procesamiento mediante expresiones regulares. |
-| time | Medición de tiempos y temporización. |
-| os | Acceso a archivos y variables del sistema. |
-| subprocess | Ejecución de procesos externos. |
-| collections | Estructuras auxiliares utilizadas por el watchdog térmico. |
-
-Dependiendo del componente ejecutado, pueden utilizarse bibliotecas adicionales.
-
----
-
-# 6. Capa de abstracción del backend
-
-## llm_backend.py
-
-La comunicación con los modelos de lenguaje se encuentra centralizada en `llm_backend.py`.
-
-Este componente constituye una capa de abstracción cuya única responsabilidad es realizar la inferencia mediante el proveedor configurado.
-
-Entre sus responsabilidades se encuentran:
-
-- seleccionar el backend configurado;
-- preparar la solicitud de inferencia;
-- enviar la consulta al proveedor correspondiente;
-- recibir la respuesta generada por el modelo;
-- devolver un formato uniforme a `query.py`.
-
-La recuperación del conocimiento, la construcción del contexto y la selección de documentos relevantes permanecen completamente bajo la responsabilidad de `query.py`.
-
-```text
-query.py
-
-     │
-     ▼
-
-Contexto construido
-
-     │
-     ▼
-
-llm_backend.py
-
-     │
- ┌───┴──────────┐
- ▼              ▼
-
-LOCAL        CLOUD
-
-(Ollama)   (OpenRouter)
-```
-
-Esta organización facilita la incorporación futura de nuevos proveedores sin modificar el resto del pipeline.
-
----
-
-# 7. Backend LOCAL
-
-## Ollama
-
-El backend local utiliza Ollama como servidor de modelos de inteligencia artificial.
-
-Entre sus funciones principales se encuentran:
-
-- cargar modelos LLM instalados localmente;
-- generar embeddings;
-- ejecutar inferencias;
-- exponer una API HTTP accesible desde los scripts Python.
-
-# 8. Backend CLOUD
-
-## OpenRouter
-
-El backend cloud permite delegar la generación de respuestas a modelos de lenguaje disponibles a través de OpenRouter.
-
-Su utilización resulta especialmente útil cuando el hardware local no dispone de la capacidad suficiente para ejecutar modelos de mayor tamaño o cuando se desea evaluar distintos modelos remotos manteniendo el mismo pipeline RAG.
-
-La comunicación con OpenRouter se realiza exclusivamente mediante `llm_backend.py`, manteniendo completamente desacoplado el resto del sistema.
-
-La recuperación del conocimiento continúa realizándose localmente en `query.py`, por lo que el backend cloud únicamente recibe el contexto ya construido y genera la respuesta correspondiente.
-
----
-
-## Autenticación
-
-El acceso al servicio requiere una clave de API (API Key), que se carga desde el entorno de ejecución mediante variables de entorno.
-
-La gestión de las credenciales permanece separada del código fuente, evitando su incorporación al repositorio.
-
-Esta organización facilita la sustitución del proveedor de inferencia sin modificar el resto del pipeline.
-
----
-
-## Modelos remotos
-
-El backend cloud permite utilizar distintos modelos compatibles con OpenRouter.
-
-La selección del modelo depende de la configuración activa en la sesión y puede modificarse sin alterar el funcionamiento general del pipeline RAG.
-
-Gracias a la capa de abstracción implementada en `llm_backend.py`, el resto del sistema permanece independiente del proveedor de inferencia utilizado.
-
----
-
-# 9. Comunicación con los backends
-
-El flujo general de una consulta es independiente del proveedor de inferencia.
-
-```text
-query.py
-
-     │
-     ▼
-
-Recuperación del conocimiento
-
-     │
-     ▼
-
-Construcción del contexto
-
-     │
-     ▼
-
-llm_backend.py
-
-     │
- ┌───┴──────────┐
- ▼              ▼
-
-LOCAL        CLOUD
-
-Ollama     OpenRouter
-
-     │
-     ▼
-
-Respuesta del modelo
-
-     │
-     ▼
-
-query.py
-
-     │
-     ▼
-
-Usuario
-```
-
-Esta arquitectura permite cambiar de backend sin modificar la lógica principal de `query.py`, manteniendo completamente desacopladas la recuperación del conocimiento y la inferencia.
-
----
-
-# 10. Ejecución del entorno
-
-## Activar el entorno virtual
-
-```bash
-source venv_rag/bin/activate
-```
-
----
-
-## Verificar Ollama
-
-Cuando se utilice el backend LOCAL, es posible comprobar los modelos instalados mediante:
-
-```bash
-ollama list
-```
-
----
-
-## Iniciar el servicio Ollama
-
-Si el servicio no se encuentra en ejecución:
-
-```bash
-ollama serve
-```
-
----
-
-## Ejecutar una consulta
-
-Con el entorno preparado:
-
-```bash
+# 6. Iniciar el motor de consultas RAG (query.py)
 python3 query.py
 ```
 
-Durante el inicio de la aplicación, el usuario selecciona el modo de operación.
-
-La configuración de la sesión determina automáticamente:
-
-- modo de trabajo;
-- backend de inferencia;
-- modelo de lenguaje;
-- modelo de embeddings.
-
-Una vez inicializada la sesión, `query.py` coordina el resto del pipeline hasta obtener la respuesta del modelo.
-
 ---
 
-# 11. Observabilidad
+## 8. Estado actual del entorno
 
-La observabilidad del pipeline se encuentra centralizada en `logger.py`.
+Al **26 de agosto de 2026**, el entorno de ejecución ofrece:
+* **Separación Tripartita de Directorios:**
+  1. Windows `E:\Developer\Tools\LibreHardwareMonitor\python` para la telemetría térmica.
+  2. WSL2 `~/rag_maui_docs_for_rag/scripts` para los ejecutables del motor RAG y parsers.
+  3. WSL2 `~/rag_workspace/MauiAppGestorMovil` para el espacio de trabajo aislado del Target Project.
+* **Persistencia Estructurada en `MauiAppGestorMovil`:**
+  * `knowledge/symbols/symbols_raw.jsonl` (57 símbolos extraídos).
+  * `knowledge/embeddings/embeddings.jsonl` (57 vectores reconciliados).
+* **Políticas de Exclusión Respetadas:** Exclusión verificada de `DatosIniciales/` y copias de respaldo mediante `knowledge_policy.conf` (v1.2).
+* **Supervisión y Auditoría:** Auditoría en `logger.py` y protección térmica activa entre Flask (Windows) y `thermal_watchdog.py` (WSL2).
 
-Este componente registra una sesión independiente para cada consulta realizada mediante `query.py`.
-
-Entre la información registrada se encuentra:
-
-- fecha y hora de ejecución;
-- backend utilizado;
-- modelo seleccionado;
-- modelo de embeddings;
-- modo de operación;
-- pregunta realizada;
-- secuencia cronológica de eventos del pipeline.
-
-Además, calcula automáticamente las métricas:
-
-- EMBEDDING_TIME;
-- SEARCH_TIME;
-- LLM_TIME;
-- PIPELINE_TIME.
-
-Durante el desarrollo también puede registrarse información adicional mediante la función genérica:
-
-```text
-log_debug()
-```
-
-Esta función permite almacenar información de diagnóstico —como los fragmentos recuperados durante la búsqueda semántica— sin modificar el comportamiento funcional del pipeline.
-
----
-
-# 12. Integración con la supervisión térmica
-
-La supervisión térmica forma parte de la arquitectura general del proyecto, aunque se ejecuta completamente desacoplada del pipeline principal.
-
-Su funcionamiento puede resumirse de la siguiente forma:
-
-```text
-Windows
-
-      │
-      ▼
-
-LibreHardwareMonitor
-
-      │
-      ▼
-
-export_temp_server.py
-
-      │
-      ▼
-
-HTTP / JSON
-
-      │
-      ▼
-
-thermal_watchdog.py
-
-      │
-      ▼
-
-Monitoreo continuo
-
-      │
-      ▼
-
-Acciones de protección
-```
-
-Cuando la temperatura supera los umbrales configurados, `thermal_watchdog.py` puede registrar el evento y finalizar preventivamente la ejecución de `query.py` para proteger el hardware.
-
-La comunicación entre Windows y WSL2 se realiza mediante un servicio HTTP ligero implementado con Flask.
-
----
-
-# 13. Estado actual del entorno
-
-Actualmente el entorno de ejecución permite:
-
-- ejecutar el pipeline RAG sobre WSL2;
-- generar embeddings mediante Ollama;
-- recuperar conocimiento desde `embeddings.jsonl`;
-- complementar el contexto mediante `symbols.jsonl`;
-- incorporar el contexto recuperado al prompt enviado al LLM;
-- utilizar inferencia local mediante Ollama;
-- utilizar inferencia remota mediante OpenRouter;
-- seleccionar distintos modelos según el modo de operación;
-- registrar automáticamente la actividad de cada consulta;
-- calcular métricas del pipeline;
-- registrar información adicional de depuración mediante `log_debug()`;
-- supervisar las condiciones térmicas del equipo mediante procesos desacoplados.
-
-La arquitectura mantiene una separación clara entre recuperación del conocimiento, inferencia, observabilidad y supervisión térmica.
-
----
-
-# 14. Evolución prevista
-
-Entre las posibles líneas de evolución del entorno se encuentran:
-
-- incorporación de aceleración mediante GPU;
-- soporte para nuevos proveedores de inferencia;
-- gestión automática de modelos locales;
-- optimización del consumo de recursos;
-- ampliación de las capacidades de observabilidad;
-- automatización de la construcción de nuevas bases de conocimiento;
-- soporte para múltiples proyectos mediante repositorios documentales intercambiables.
-
-Estas funcionalidades representan posibles mejoras futuras y no forman parte de la implementación actual.
-
----
-
-# 15. Resumen
-
-La arquitectura de ejecución del proyecto combina:
-
-```text
-Windows
-        │
-        ▼
-WSL2 Ubuntu
-        │
-        ▼
-Python
-        │
-        ▼
-Pipeline RAG
-        │
-        ▼
-Recuperación local
-        │
-        ▼
-Construcción del contexto
-        │
-        ▼
-llm_backend.py
-     ┌──┴──┐
-     ▼     ▼
- Ollama  OpenRouter
-```
-
-Esta organización proporciona una plataforma experimental para el desarrollo y evaluación de asistentes técnicos basados en RAG, permitiendo mantener la recuperación del conocimiento bajo control local mientras la inferencia puede realizarse tanto mediante recursos locales como servicios remotos.
-
-La separación entre recuperación, inferencia, observabilidad y supervisión térmica constituye uno de los principales principios arquitectónicos alcanzados por el proyecto y facilita su evolución hacia futuras versiones del asistente técnico.
