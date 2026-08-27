@@ -13,11 +13,12 @@ El objetivo principal no consiste únicamente en recuperar fragmentos mediante b
 La arquitectura mantiene separadas las responsabilidades de:
 
 * adquisición y preparación del conocimiento;
-* recuperación semántica;
-* extracción de información estructurada del código;
-* construcción del contexto;
-* inferencia mediante modelos de lenguaje;
-* observabilidad del pipeline;
+* resolución dinámica de espacios de trabajo multiproyecto (ADR-013);
+* recuperación semántica y vectorial;
+* extracción heurística de información estructurada desde código fuente (KS2 Símbolos);
+* construcción del contexto mediante recuperación multi-entidad agnóstica;
+* inferencia mediante modelos de lenguaje (local/cloud);
+* observabilidad y telemetría del pipeline;
 * supervisión térmica del entorno de ejecución.
 
 Esta separación permite evolucionar cada componente de forma independiente y experimentar con nuevas estrategias sin modificar innecesariamente el núcleo del sistema.
@@ -25,17 +26,17 @@ Esta separación permite evolucionar cada componente de forma independiente y ex
 El proyecto integra distintas áreas de conocimiento:
 
 * Inteligencia Artificial aplicada mediante modelos de lenguaje.
-* Recuperación Semántica de Información.
-* Arquitecturas RAG.
+* Recuperación Semántica de Información (Búsqueda por Embeddings + Vectores Coseno).
+* Arquitecturas RAG Híbridas (Texto + Grafos de Símbolos Struct-KS2).
 * Construcción y organización del contexto para inferencia.
 * Extracción heurística de información estructurada desde código fuente.
 * Arquitectura de software orientada al bajo acoplamiento y alta cohesión.
-* Observabilidad mediante registros, métricas y mecanismos de depuración.
+* Observabilidad mediante registros cronológicos, métricas de latencia y telemetría de depuración (`logger.py`).
 * Supervisión térmica para proteger el hardware durante cargas intensivas.
 
 Aunque inicialmente el proyecto estuvo orientado principalmente a la ejecución local de modelos mediante Ollama, la arquitectura evolucionó hacia un enfoque híbrido en el que la recuperación del conocimiento permanece desacoplada de la inferencia.
 
-Actualmente, la inferencia puede realizarse mediante diferentes backends sin modificar la lógica principal de recuperación y construcción del contexto.
+Actualmente, la inferencia puede realizarse mediante diferentes backends (Ollama local o OpenRouter Cloud) sin modificar la lógica principal de recuperación y construcción del contexto.
 
 El objetivo a largo plazo es evolucionar progresivamente esta arquitectura hacia un **asistente técnico capaz de conocer y utilizar información actualizada de un proyecto de software para colaborar con el desarrollador durante su ciclo de vida**.
 
@@ -46,16 +47,17 @@ El objetivo a largo plazo es evolucionar progresivamente esta arquitectura hacia
 Los principales objetivos son:
 
 * Diseñar una arquitectura RAG modular y desacoplada para consultas sobre proyectos de software.
-* Mejorar progresivamente la calidad del contexto entregado a los modelos de lenguaje.
+* Permitir la conmutación dinámica entre múltiples proyectos objetivo (*workspaces*) sin alterar el código fuente (ADR-013).
+* Mejorar progresivamente la calidad del contexto entregado a los modelos de lenguaje mediante inyección multi-símbolo Top-N.
 * Mantener separadas la recuperación del conocimiento y la generación de respuestas.
 * Integrar diferentes fuentes de conocimiento del proyecto.
-* Incorporar información estructurada procedente del código fuente.
+* Incorporar información estructurada procedente del código fuente (C# y parsers futuros).
 * Facilitar la evolución del pipeline mediante componentes independientes.
-* Evaluar diferentes estrategias de recuperación y construcción de contexto.
+* Evaluar diferentes estrategias de recuperación y construcción de contexto (Tokenización agnóstica `PascalCase`, `camelCase`, `snake_case`).
 * Permitir el uso de distintos modelos y proveedores de inferencia.
-* Registrar métricas y eventos relevantes durante la ejecución.
+* Registrar métricas y eventos relevantes durante la ejecución (`query_log.txt`).
 * Supervisar el comportamiento térmico del hardware durante cargas intensivas.
-* Mantener coherencia entre código, documentación técnica y decisiones arquitectónicas.
+* Mantener coherencia entre código, documentación técnica y decisiones arquitectónicas (ADR).
 * Servir como plataforma experimental para estudiar arquitecturas RAG orientadas al desarrollo y mantenimiento de software.
 
 El proyecto prioriza:
@@ -85,7 +87,7 @@ Cada módulo debe concentrarse en una responsabilidad principal.
 
 ### Separación de responsabilidades
 
-La adquisición del conocimiento, recuperación, construcción del contexto, inferencia, observabilidad y supervisión térmica se mantienen como responsabilidades independientes.
+La adquisición del conocimiento, la resolución del workspace activo, la recuperación semántica, la extracción simbólica, la construcción del contexto, la inferencia, la observabilidad y la supervisión térmica se mantienen como responsabilidades independientes.
 
 ### Evolución incremental
 
@@ -113,19 +115,21 @@ No se incorporan mecanismos complejos únicamente porque puedan resultar útiles
 
 Antes de introducir nuevas capas o componentes se busca obtener evidencia mediante pruebas y comportamiento real del sistema.
 
+
 ### Observabilidad
 
 El comportamiento del pipeline debe poder analizarse mediante:
 
 * registros cronológicos;
-* métricas de tiempo;
+* métricas de tiempo (EMBEDDING_TIME, SEARCH_TIME, LLM_TIME, PIPELINE_TIME);
 * eventos;
-* información de depuración;
-* pruebas documentadas.
+* información de depuración (SYMBOL MATCH, RETRIEVAL METADATA);
+* pruebas documentadas en logs centralizados (query_log.txt).
+
 
 ### Documentación como parte del desarrollo
 
-Las decisiones arquitectónicas relevantes deben conservar su contexto y justificación mediante documentación y, cuando corresponda, mediante **Architecture Decision Records (ADR)**.
+Las decisiones arquitectónicas relevantes deben conservar su contexto y justificación mediante documentación y, cuando corresponda, mediante Architecture Decision Records (ADR).
 
 ---
 
@@ -199,16 +203,18 @@ El entorno WSL2 concentra los componentes relacionados con el procesamiento del 
 
 Entre sus responsabilidades se encuentran:
 
-* procesamiento documental;
+* resolución dinámica del espacio de trabajo activo mediante config_loader.py (active_project.conf);
+* procesamiento documental e ingestión;
 * fragmentación de contenido;
-* generación de embeddings;
-* extracción de símbolos estructurados;
-* recuperación semántica;
-* construcción del contexto;
-* coordinación del proceso de consulta;
-* selección del backend de inferencia;
-* registro de eventos y métricas;
-* supervisión térmica.
+* generación de embeddings vectoriales;
+* extracción de símbolos estructurados del código fuente;
+* recuperación semántica vectorial y coincidencia simbólica Multi-TopN (v1.9);
+* construcción del contexto enriquecido;
+* coordinación del proceso de consulta (query.py);
+* selección del backend de inferencia (llm_backend.py);
+* registro de eventos, observabilidad y perfilado de tiempos (logger.py);
+* supervisión térmica preventiva.
+
 
 Una representación simplificada es:
 
@@ -256,42 +262,51 @@ El pipeline está diseñado para separar claramente:
 El flujo general de una consulta puede representarse de la siguiente manera:
 
 ```text
-Usuario
+
+Usuario (Input)
    │
    ▼
-Recepción de la consulta
+Recepción y tokenización agnóstica (_extract_tokens)
    │
    ▼
-Generación del embedding
+Generación del embedding (nomic-embed-text)
    │
-   ▼
-Recuperación de conocimiento
-   │
-   ├──────────────────────────┐
-   │                          │
-   ▼                          ▼
-Búsqueda semántica      Información estructurada
-   │                          │
-   └──────────────┬───────────┘
-                  ▼
-       Construcción del contexto
-                  │
-                  ▼
-       Construcción del prompt
-                  │
-                  ▼
-           llm_backend.py
-                  │
-          ┌───────┴───────┐
-          ▼               ▼
-        LOCAL           CLOUD
-       Ollama       OpenRouter
-                  │
-                  ▼
-               Respuesta
+   ├──────────────────────────────────────────┐
+   │                                          │
+   ▼                                          ▼
+Búsqueda Semántica Vectorial        Búsqueda Simbólica Multi-TopN (KS2)
+(Top-K Chunks por Coseno)          (Evaluación por Subcadena y Overlap)
+   │                                          │
+   │                                          ▼
+   │                               Ranking Top-3 Candidatos
+   │                               (Vistas, ViewModels, Modelos, Messages)
+   │                                          │
+   └────────────────────┬─────────────────────┘
+                        ▼
+             Construcción del contexto
+            (RAG Context + Symbol Context)
+                        │
+                        ▼
+                 Construcción del prompt
+                        │
+                        ▼
+                 llm_backend.py
+                        │
+             ┌──────────┴──────────┐
+             ▼                     ▼
+           LOCAL                 CLOUD
+          Ollama              OpenRouter
+                        │
+                        ▼
+                     Respuesta
+
 ```
 
-La arquitectura permite que nuevas fuentes de conocimiento puedan incorporarse progresivamente sin acoplarlas directamente a un proveedor de inferencia.
+Características destacadas del Buscador Multi-Símbolo Top-N (v1.9)
+
+* Tokenización agnóstica: Normaliza e interpreta identificadores en PascalCase, camelCase y snake_case de forma transparente.
+* Insensibilidad a formato: Resiliente ante entradas en minúsculas corridas (ej. gestiondeproductosviewmodel) o consultas informales de UI.
+* Inyección Multi-Entidad: Recupera hasta 3 candidatos (TOP_K_SYMBOLS = 3), permitiendo inyectar simultáneamente la Vista (View), el ViewModel y la entidad de datos asociada en un solo bloque ARCHITECTURE CONTEXT.
 
 ---
 
@@ -437,14 +452,18 @@ El módulo principal es:
 logger.py
 ```
 
-Entre la información registrada se encuentran eventos relacionados con las distintas etapas del pipeline.
+Entre la información registrada se encuentran eventos relacionados con las distintas etapas del pipeline en el archivo query_log.txt.
 
-También se contemplan métricas como:
+También se contemplan métricas de rendimiento y perfilado:
 
-* `EMBEDDING_TIME`;
-* `SEARCH_TIME`;
-* `LLM_TIME`;
-* `PIPELINE_TIME`.
+* EMBEDDING_TIME: tiempo empleado en generar el vector de la pregunta;
+
+* SEARCH_TIME: tiempo empleado en la búsqueda en memoria (vectorial y simbólica);
+
+* LLM_TIME: tiempo consumido por la inferencia del modelo (local/cloud);
+
+* PIPELINE_TIME: tiempo total de ciclo de la consulta.
+
 
 La observabilidad permite:
 
@@ -463,16 +482,17 @@ La información de depuración y las métricas permanecen separadas de la lógic
 
 | Componente                 | Responsabilidad principal                                                            |
 | -------------------------- | ------------------------------------------------------------------------------------ |
+| `config_loader.py`         | Resolución dinámica e inmutable del workspace activo (active_project.conf) - ADR-013.|
 | `ingest.py`                | Procesamiento e ingestión de conocimiento documental.                                |
 | `chunk.py`                 | Fragmentación de contenido para su posterior procesamiento.                          |
-| `embed.py`                 | Generación de embeddings.                                                            |
+| `embed.py`                 | Generación de embeddings vinculados al workspace resuelto dinámicamente.             |
 | `symbols_extractor.py`     | Coordinación de la extracción estructurada de símbolos.                              |
 | `parsers/csharp_parser.py` | Parser heurístico de código C#.                                                      |
-| `query.py`                 | Coordinación del proceso de consulta y construcción del contexto.                    |
+| `query.py`                 | Orquestador RAG v1.9: búsqueda vectorial + matcher Multi-Símbolo Top-N + contexto.   |
 | `llm_backend.py`           | Abstracción de los proveedores de inferencia.                                        |
 | `config_loader.py`         | Carga centralizada de configuración.                                                 |
 | `knowledge_filter.py`      | Aplicación de políticas y filtros relacionados con la construcción del conocimiento. |
-| `logger.py`                | Registro de eventos, métricas y observabilidad.                                      |
+| `logger.py`                | Registro de eventos, observabilidad, métricas y depuración en query_log.txt.         |
 | `thermal_watchdog.py`      | Supervisión térmica y protección preventiva.                                         |
 | `export_temp_server.py`    | Publicación de información térmica desde Windows hacia WSL2.                         |
 
@@ -520,20 +540,21 @@ source/
 
 ## 14. Tecnologías utilizadas
 
-| Área                      | Tecnología           |
-| ------------------------- | -------------------- |
-| Lenguaje principal        | Python               |
-| Sistema anfitrión         | Windows 10           |
-| Entorno de ejecución      | WSL2 Ubuntu          |
-| Proyecto analizado        | .NET MAUI / C#       |
-| Recuperación RAG          | Embeddings locales   |
-| Modelo de embeddings      | `nomic-embed-text`   |
-| Inferencia LOCAL          | Ollama               |
-| Inferencia CLOUD          | OpenRouter           |
-| Supervisión térmica       | LibreHardwareMonitor |
-| Servicio de monitoreo     | Flask                |
-| Comunicación Windows–WSL2 | HTTP + JSON          |
-| Control de versiones      | Git / GitHub         |
+| Área                      | Tecnología                                               |
+| ------------------------- | ---------------------------------------------------------|
+| Lenguaje principal        | Python                                                   |
+| Sistema anfitrión         | Windows 10                                               |
+| Entorno de ejecución      | WSL2 Ubuntu                                              |
+| Proyecto analizado        | .NET MAUI / C#                                           |
+| Resolución de Workspace   | Jerarquía multiproyecto con config_loader.py (ADR-013)   |
+| Recuperación RAG          | Embeddings locales + Buscador Simbólico Multi-TopN (v1.9)|
+| Modelo de embeddings      | `nomic-embed-text`                                       |
+| Inferencia LOCAL          | Ollama                                                   |
+| Inferencia CLOUD          | OpenRouter                                               |
+| Supervisión térmica       | LibreHardwareMonitor                                     |
+| Servicio de monitoreo     | Flask                                                    |
+| Comunicación Windows–WSL2 | HTTP + JSON                                              |
+| Control de versiones      | Git / GitHub                                             |
 
 ---
 
@@ -541,28 +562,19 @@ source/
 
 El proyecto se encuentra en una etapa de evolución incremental.
 
-Entre las capacidades actualmente desarrolladas se encuentran:
+Entre las capacidades actualmente desarrolladas y consolidadas en la rama actual (feature/context-improvement) se encuentran:
 
-* arquitectura RAG modular;
-* recuperación semántica local;
-* generación local de embeddings;
-* separación entre recuperación e inferencia;
-* backend LOCAL mediante Ollama;
-* backend CLOUD mediante OpenRouter;
-* construcción progresiva de mecanismos para enriquecer el contexto;
-* extracción estructurada de símbolos desde código C#;
-* contrato definido para la representación de símbolos;
-* pruebas sintéticas de regresión para el parser C#;
-* registro cronológico de eventos;
-* métricas del pipeline;
-* mecanismos de depuración;
-* supervisión térmica desacoplada;
-* protección preventiva frente a condiciones térmicas críticas;
-* documentación técnica organizada;
-* registro de decisiones arquitectónicas mediante ADR;
-* conservación de evidencias históricas de pruebas.
-
-El trabajo actual se orienta a consolidar los componentes desarrollados antes de continuar incorporando nuevas capas de complejidad.
+* Resolución Dinámica de Workspace (ADR-013): Orquestación multiproyecto desacoplada y libre de rutas cableadas.
+* Buscador Multi-Símbolo Top-N (v1.9): Coincidencia de símbolos agnóstica del lenguaje con tokenización universal (PascalCase, camelCase, snake_case) y ranking de candidatos Top-3.
+* Resiliencia a Consultas de Lenguaje Natural: Tolerancia demostrada ante entradas en minúsculas corridas, abreviaturas o frases enfocadas en UI.
+* arquitectura RAG modular y desacoplada;
+* recuperación semántica local y generación local de embeddings;
+* separación estricta entre recuperación e inferencia;
+* backends de inferencia híbridos (LOCAL Ollama / CLOUD OpenRouter);
+* extracción estructurada de símbolos desde código C# (KS2);
+* telemetría y observabilidad en tiempo real registrada en query_log.txt;
+* supervisión térmica desacoplada y protección preventiva del hardware;
+* documentación técnica organizada y registro de decisiones arquitectónicas mediante ADR.
 
 ---
 
@@ -570,25 +582,19 @@ El trabajo actual se orienta a consolidar los componentes desarrollados antes de
 
 La documentación técnica del proyecto se encuentra organizada en documentos independientes.
 
-| Documento                                | Contenido                                           |
-| ---------------------------------------- | --------------------------------------------------- |
-| `01_vision_general.md`                   | Contexto, motivación y objetivos del proyecto.      |
-| `02_arquitectura_del_sistema.md`         | Arquitectura general y organización de componentes. |
-| `03_pipeline_RAG.md`                     | Flujo del pipeline y construcción del contexto.     |
-| `04_ollama_y_entorno.md`                 | Configuración del entorno y modelos utilizados.     |
-| `05_supervision_y_proteccion_termica.md` | Supervisión térmica y mecanismos de protección.     |
-| `06_pruebas_y_validacion.md`             | Estrategia y evidencias de validación.              |
-| `07_mantenimiento_y_evolucion.md`        | Mantenimiento y evolución prevista.                 |
-| `08_backend_hibrido.md`                  | Desacoplamiento entre recuperación e inferencia.    |
-| `09_hoja_de_ruta_arquitectura.md`        | Evolución progresiva de la arquitectura.            |
-| `docs/adr/`                              | Registro de decisiones arquitectónicas.             |
-| `docs/pruebas/`                          | Evidencia histórica de pruebas realizadas.          |
-
-La estructura detallada de estos documentos puede consultarse en:
-
-```text
-ESTRUCTURA_DEL_PROYECTO.md
-```
+| Documento                                | Contenido                                                     |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| `01_vision_general.md`                   | Contexto, motivación y objetivos del proyecto.                |
+| `02_arquitectura_del_sistema.md`         | Arquitectura general y organización de componentes.           |
+| `03_pipeline_RAG.md`                     | Flujo del pipeline y construcción del contexto.               |
+| `04_ollama_y_entorno.md`                 | Configuración del entorno y modelos utilizados.               |
+| `05_supervision_y_proteccion_termica.md` | Supervisión térmica y mecanismos de protección.               |
+| `06_pruebas_y_validacion.md`             | Estrategia y evidencias de validación.                        |
+| `07_mantenimiento_y_evolucion.md`        | Mantenimiento y evolución prevista.                           |
+| `08_backend_hibrido.md`                  | Desacoplamiento entre recuperación e inferencia.              |
+| `09_hoja_de_ruta_arquitectura.md`        | Evolución progresiva de la arquitectura.                      |
+| `docs/adr/ADR-013-...md`                 | Resolución dinámica de workspace y jerarquía de configuración.|
+| `docs/pruebas/`                          | Evidencia histórica de pruebas realizadas.                    |
 
 ---
 
@@ -614,18 +620,13 @@ Documentar y consolidar
 
 Entre las posibles líneas futuras se encuentran:
 
-* mejora de la calidad de recuperación;
-* evaluación del ranking de resultados;
-* enriquecimiento progresivo del contexto;
+* incorporación de búsqueda híbrida con peso semántico (BM25 + Distancia Coseno);
+* heurísticas de prioridad de símbolos por tipo de archivo (.xaml.cs vs .cs);
+* evaluación del ranking de resultados y enriquecimiento progresivo del contexto;
 * incorporación controlada de nuevas Knowledge Sources;
-* establecimiento de relaciones entre componentes;
-* análisis de dependencias;
-* incorporación de información temporal;
-* evaluación comparativa de modelos;
+* análisis de dependencias entre componentes;
 * métricas de calidad del contexto;
 * evolución progresiva hacia un asistente técnico especializado en el proyecto.
-
-Estas capacidades deberán incorporarse únicamente cuando exista una necesidad concreta y evidencia de que aportan valor al sistema.
 
 ---
 
